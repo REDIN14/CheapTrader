@@ -18,6 +18,8 @@ import { replayMarkers } from "./lib/replayMarkers";
 import { useChartData, type ChartFrame } from "./lib/useChartData";
 import { REPLAY_SPEEDS, useReplay } from "./lib/useReplay";
 import { useReplayProfiles } from "./lib/useReplayProfiles";
+import { useAccountReport } from "./lib/useAccountReport";
+import { liveView, periodStart, replayView, serverNow, type Period } from "./lib/performance";
 import { useUpdate } from "./lib/useUpdate";
 import { updateChip } from "./lib/updates";
 import type {
@@ -54,7 +56,7 @@ import { ReplayTradePanel } from "./components/ReplayTradePanel";
 import { ReplayCut } from "./components/ReplayCut";
 import { ReplayPicker } from "./components/ReplayPicker";
 import { ProfileMenu } from "./components/ProfileMenu";
-import { ReplayReport } from "./components/ReplayReport";
+import { PerformanceReport } from "./components/PerformanceReport";
 import { ReplayToolbar } from "./components/ReplayToolbar";
 import { DataCoverage } from "./components/DataCoverage";
 import { IndicatorManager } from "./components/IndicatorManager";
@@ -384,6 +386,37 @@ export default function App() {
   const tick = live.tick;
   // The broker's clock, learned from its ticks (see lib/serverClock.ts).
   const clock = useServerClock(tick);
+
+  // The live account's performance report, worked out from the broker's history (lib/useAccountReport.ts):
+  // its figures are in the bar at the bottom, its trades and curve in the drawer above it.
+  const [liveReportOpen, setLiveReportOpen] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<Period>("all");
+  const reportNow = () => serverNow(clock.skew);
+  // the bar: the figures of the whole history
+  const liveFigures = useAccountReport({
+    enabled: !replayActive && broker !== "",
+    detail: false,
+    balance: account?.balance ?? null,
+    positions: positions.length,
+    now: reportNow,
+  });
+  // the drawer, while it is open: the trades and the curve of the period that was chosen
+  const liveReport = useAccountReport({
+    enabled: !replayActive && broker !== "" && liveReportOpen,
+    detail: true,
+    period: reportPeriod,
+    since: () => periodStart(reportPeriod, reportNow() ?? Date.now() / 1000),
+    balance: account?.balance ?? null,
+    positions: positions.length,
+    now: reportNow,
+  });
+  const liveReportView = useMemo(() => liveView(liveReport.report), [liveReport.report]);
+  const replayReportView = useMemo(
+    () => replayView(replay.report, replay.account, replay.state?.cursor_time ?? 0),
+    [replay.report, replay.account, replay.state?.cursor_time],
+  );
+  const digitsByName = useMemo(() => new Map(symbols.map((s) => [s.name, s.digits])), [symbols]);
+  const digitsOf = useCallback((name: string) => digitsByName.get(name) ?? digits, [digitsByName, digits]);
   const bars = frame.bars;
   // The interval of the candles on screen: while the next one loads that is still
   // the previous one, and the legend, countdown and live candle must agree with it.
@@ -1803,14 +1836,25 @@ export default function App() {
           </div>
 
           {replayActive && replay.reportOpen && (
-            <ReplayReport
-              report={replay.report}
-              account={replay.account}
-              cursorTime={replay.state?.cursor_time ?? 0}
+            <PerformanceReport
+              view={replayReportView}
               intraday={intraday}
-              digits={digits}
+              digitsOf={digitsOf}
               title={`${symbol ?? ""} · ${TF[timeframe].short}`}
               onClose={replay.toggleReport}
+            />
+          )}
+          {!replayActive && liveReportOpen && (
+            <PerformanceReport
+              view={liveReportView}
+              intraday
+              digitsOf={digitsOf}
+              title={[account?.server, account?.login ? String(account.login) : "", account?.currency].filter(Boolean).join(" · ")}
+              loading={liveReport.loading}
+              error={liveReport.error}
+              onReload={liveReport.reload}
+              period={{ value: reportPeriod, onChange: setReportPeriod }}
+              onClose={() => setLiveReportOpen(false)}
             />
           )}
 
@@ -1820,8 +1864,10 @@ export default function App() {
             account={account}
             positionCount={positions.length}
             paper={replay.account}
-            reportOpen={replay.reportOpen}
-            onToggleReport={replay.toggleReport}
+            reportOpen={replayActive ? replay.reportOpen : liveReportOpen}
+            onToggleReport={replayActive ? replay.toggleReport : () => setLiveReportOpen((open) => !open)}
+            liveSummary={liveFigures.report?.summary ?? null}
+            liveReturn={liveFigures.report?.return_pct ?? null}
             canConnect={canConnect}
             onConnect={() => setTour(METATRADER_STEP)}
           />

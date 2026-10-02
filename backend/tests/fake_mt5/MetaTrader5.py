@@ -18,6 +18,8 @@ named by ``FAKE_MT5_STATE`` (written atomically):
      "terminal_running": true,  false: initialize() fails, as when MetaTrader is not open
      "logged_in": true,         false: the terminal is open but no account is logged in (account_info() is None)
      "stops_level": 0,          symbol_info().trade_stops_level
+     "deals": [...],            the account's history, as history_deals_get() gives it (one dict of TradeDeal fields each)
+     "deals_fail": false,       history_deals_get() answers None, as when the call itself failed
      "positions": [...], "account": {...}, "orders": [...], "pending": [...], "next_ticket": 1}
 
 ``orders`` is the log of every request ``order_send`` was given; ``pending`` holds the pending orders that wait.
@@ -325,13 +327,33 @@ def orders_get(**kwargs):
     return tuple(out)
 
 
+def history_deals_get(date_from=None, date_to=None, **kwargs):
+    """The account's history: the deals in the shared state that fall in the range."""
+    _busy()
+    state = _load()
+    if state.get("deals_fail"):
+        return None  # the call itself failed (as against: no deals)
+    lo = date_from.timestamp() if hasattr(date_from, "timestamp") else date_from
+    hi = date_to.timestamp() if hasattr(date_to, "timestamp") else date_to
+    out = []
+    for d in state.get("deals", []):
+        if lo is not None and d["time"] < lo or hi is not None and d["time"] > hi:
+            continue
+        if "position" in kwargs and d.get("position_id") != kwargs["position"]:
+            continue
+        out.append(_Obj(**d))
+    return tuple(out)
+
+
 def account_info():
     state = _load()
     if not state.get("logged_in", True):
         return None
     acc = {"login": 1, "server": "Fake-Demo", "currency": "EUR", "balance": 1000.0, "equity": 1000.0,
            "margin": 0.0, "margin_free": 1000.0, "profit": 0.0, "leverage": 500, "name": "Fake",
-           "trade_allowed": True, "trade_expert": True}
+           "trade_allowed": True, "trade_expert": True, "company": "Fake Broker Ltd", "credit": 0.0,
+           "margin_level": 0.0, "margin_so_call": 70.0, "margin_so_so": 20.0, "margin_so_mode": 0,
+           "trade_mode": 0, "margin_mode": 2, "limit_orders": 200, "fifo_close": False, "currency_digits": 2}
     acc.update(state.get("account", {}))
     return _Obj(**acc)
 

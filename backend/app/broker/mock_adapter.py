@@ -24,6 +24,7 @@ from app.schemas import (
     TIMEFRAME_SECONDS,
     AccountInfo,
     Bar,
+    Deal,
     ModifyOrderRequest,
     ModifyRequest,
     OrderRequest,
@@ -129,6 +130,10 @@ class MockAdapter(BrokerAdapter):
         self._orders: dict[int, PendingOrder] = {}
         self._next_ticket = 1000
         self._balance = 10_000.0
+        #: The account's history: the money it was opened with, and every fill since (see get_deals).
+        self._deals: list[Deal] = []
+        self._deal_ticket = 0
+        self._journal(kind="balance", profit=self._balance, comment="deposit")
 
     # -- lifecycle ---------------------------------------------------------
     def connect(self) -> None:
@@ -260,6 +265,15 @@ class MockAdapter(BrokerAdapter):
             return tick.ask >= order.price
         return tick.bid <= order.price
 
+    def _journal(self, **fields) -> None:
+        """Note a deal in the account's history (what the report is made from)."""
+        self._deal_ticket += 1
+        self._deals.append(Deal(ticket=self._deal_ticket, time=int(datetime.now(timezone.utc).timestamp()), **fields))
+
+    def get_deals(self) -> list[Deal]:
+        with self._lock:
+            return [d.model_copy() for d in self._deals]
+
     def _fill(self, order: PendingOrder, tick: Tick) -> None:
         """The order becomes a position (with the order's number, as on MetaTrader). A limit order
         fills at its price, a stop order at whatever the market is by then."""
@@ -280,6 +294,11 @@ class MockAdapter(BrokerAdapter):
             time=int(datetime.now(timezone.utc).timestamp()),
             comment=order.comment,
         )
+        position = self._positions[order.ticket]
+        self._journal(
+            kind=order.side.lower(), entry="in", position_id=order.ticket, order=order.ticket, symbol=order.symbol,
+            volume=order.volume, price=position.price_open, comment=order.comment,
+        )  # fmt: skip
 
     def _trigger_levels(self, symbol: str, tick: Tick) -> None:
         """What a broker's server does: fill a pending order when the market reaches its price, and
@@ -290,21 +309,26 @@ class MockAdapter(BrokerAdapter):
         for position in [p for p in self._positions.values() if p.symbol == symbol]:
             price = tick.bid if position.side == "BUY" else tick.ask
             if position.side == "BUY":
-                hit = (position.sl and price <= position.sl) or (position.tp and price >= position.tp)
+                sl_hit, tp_hit = bool(position.sl and price <= position.sl), bool(position.tp and price >= position.tp)
             else:
-                hit = (position.sl and price >= position.sl) or (position.tp and price <= position.tp)
-            if hit:
-                self._settle(position, price)
+                sl_hit, tp_hit = bool(position.sl and price >= position.sl), bool(position.tp and price <= position.tp)
+            if sl_hit or tp_hit:
+                self._settle(position, price, "sl" if sl_hit else "tp")
 
     def _profit(self, position: Position, price: float) -> float:
         contract = self._spec(position.symbol)[3]
         direction = 1 if position.side == "BUY" else -1
         return round(direction * (price - position.price_open) * position.volume * contract, 2)
 
-    def _settle(self, position: Position, price: float) -> None:
+    def _settle(self, position: Position, price: float, reason: str = "client") -> None:
         self._positions.pop(position.ticket, None)
         profit = self._profit(position, price)
         self._balance += profit
+        self._journal(
+            kind="sell" if position.side == "BUY" else "buy", entry="out", position_id=position.ticket,
+            order=position.ticket, symbol=position.symbol, volume=position.volume, price=price, profit=profit,
+            reason=reason, comment="cheaptrader close" if reason == "client" else f"[{reason}]",
+        )  # fmt: skip
 
     def _mark(self) -> None:
         """Value every open position at the current quote (and let waiting orders see the market)."""
@@ -385,6 +409,10 @@ class MockAdapter(BrokerAdapter):
                 profit=floating,
                 leverage=100,
                 name="Mock Trader",
+                company="Mock Broker",
+                trade_mode="demo",
+                margin_mode="hedging",
+                stop_out_mode="percent",
             )
 
     def get_positions(self, symbol: str | None = None) -> list[Position]:
@@ -487,6 +515,10 @@ class MockAdapter(BrokerAdapter):
                 time=int(datetime.now(timezone.utc).timestamp()),
                 comment=request.comment,
             )
+            self._journal(
+                kind=request.side.lower(), entry="in", position_id=ticket, order=ticket, symbol=request.symbol,
+                volume=request.volume, price=price, comment=request.comment,
+            )  # fmt: skip
             self._mark()
             return OrderResult(
                 ok=True,

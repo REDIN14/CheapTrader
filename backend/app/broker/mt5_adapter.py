@@ -11,13 +11,14 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.broker.base import BrokerAdapter, BrokerError
 from app.config import Settings
 from app.schemas import (
     AccountInfo,
     Bar,
+    Deal,
     ModifyOrderRequest,
     ModifyRequest,
     OrderRequest,
@@ -46,6 +47,47 @@ REFUSALS = {
 
 #: A market order the broker re-quotes is asked for again at the new price, this many times in all.
 MAX_ATTEMPTS = 3
+
+# What MetaTrader's numbers mean (the values its documentation gives for DEAL_TYPE_*, DEAL_ENTRY_*, DEAL_REASON_*
+# and the ACCOUNT_* modes), as the words the rest of the program uses.
+_DEAL_TYPES = {
+    0: "buy", 1: "sell", 2: "balance", 3: "credit", 4: "charge", 5: "correction", 6: "bonus",
+    7: "commission", 8: "commission", 9: "commission", 10: "commission", 11: "commission",
+    12: "interest", 13: "canceled", 14: "canceled", 15: "dividend", 16: "dividend", 17: "tax",
+}  # fmt: skip
+_DEAL_ENTRIES = {0: "in", 1: "out", 2: "inout", 3: "out_by"}
+_DEAL_REASONS = {0: "client", 1: "mobile", 2: "web", 3: "expert", 4: "sl", 5: "tp", 6: "so", 7: "rollover", 8: "vmargin", 9: "split"}
+_TRADE_MODES = {0: "demo", 1: "contest", 2: "real"}
+_MARGIN_MODES = {0: "netting", 1: "exchange", 2: "hedging"}
+_STOP_OUT_MODES = {0: "percent", 1: "money"}
+#: How far back the history is asked for (the terminal gives what it holds), and how far ahead of now: the broker's
+#: clock may be hours ahead of UTC, and the answer must not stop short of the latest deal.
+HISTORY_FROM = datetime(2000, 1, 1, tzinfo=timezone.utc)
+HISTORY_AHEAD = timedelta(days=2)
+
+
+def deal_from_mt5(d) -> Deal:
+    """One line of MetaTrader's history (a ``TradeDeal``) as a ``Deal``."""
+    kind = _DEAL_TYPES.get(int(d.type), "other")
+    return Deal(
+        ticket=int(d.ticket),
+        position_id=int(getattr(d, "position_id", 0) or 0),
+        order=int(getattr(d, "order", 0) or 0),
+        time=int(d.time),
+        time_msc=int(getattr(d, "time_msc", 0) or 0),
+        kind=kind,
+        entry=_DEAL_ENTRIES.get(int(getattr(d, "entry", 0) or 0), "") if kind in ("buy", "sell") else "",
+        symbol=str(getattr(d, "symbol", "") or ""),
+        volume=float(getattr(d, "volume", 0.0) or 0.0),
+        price=float(getattr(d, "price", 0.0) or 0.0),
+        profit=float(getattr(d, "profit", 0.0) or 0.0),
+        commission=float(getattr(d, "commission", 0.0) or 0.0),
+        swap=float(getattr(d, "swap", 0.0) or 0.0),
+        fee=float(getattr(d, "fee", 0.0) or 0.0),
+        reason=_DEAL_REASONS.get(int(getattr(d, "reason", 0) or 0), ""),
+        comment=str(getattr(d, "comment", "") or ""),
+        magic=int(getattr(d, "magic", 0) or 0),
+    )
 
 # MT5 timeframe constants, resolved lazily once the package is imported.
 _TF_NAMES = {
@@ -292,7 +334,30 @@ class MT5Adapter(BrokerAdapter):
             profit=float(a.profit),
             leverage=int(a.leverage),
             name=str(getattr(a, "name", "")),
+            company=str(getattr(a, "company", "") or ""),
+            credit=float(getattr(a, "credit", 0.0) or 0.0),
+            margin_level=float(getattr(a, "margin_level", 0.0) or 0.0),
+            margin_call_level=float(getattr(a, "margin_so_call", 0.0) or 0.0),
+            stop_out_level=float(getattr(a, "margin_so_so", 0.0) or 0.0),
+            stop_out_mode=_STOP_OUT_MODES.get(int(getattr(a, "margin_so_mode", 0) or 0), ""),
+            trade_mode=_TRADE_MODES.get(int(getattr(a, "trade_mode", 0) or 0), ""),
+            margin_mode=_MARGIN_MODES.get(int(getattr(a, "margin_mode", 0) or 0), ""),
+            limit_orders=int(getattr(a, "limit_orders", 0) or 0),
+            fifo_close=bool(getattr(a, "fifo_close", False)),
+            currency_digits=int(getattr(a, "currency_digits", 2) or 2),
+            assets=float(getattr(a, "assets", 0.0) or 0.0),
+            liabilities=float(getattr(a, "liabilities", 0.0) or 0.0),
+            commission_blocked=float(getattr(a, "commission_blocked", 0.0) or 0.0),
         )
+
+    def get_deals(self) -> list[Deal]:
+        """Every deal the terminal holds for the account, oldest first. (It holds what has been loaded into its
+        History tab; choosing "All history" there makes it fetch the rest from the broker.)"""
+        self._require()
+        raw = self._mt5.history_deals_get(HISTORY_FROM, utcnow() + HISTORY_AHEAD)
+        if raw is None:
+            raise BrokerError(f"history_deals_get() failed: {self._mt5.last_error()}")
+        return sorted((deal_from_mt5(d) for d in raw), key=lambda d: (d.time, d.time_msc, d.ticket))
 
     def get_positions(self, symbol: str | None = None, *, strict: bool = False) -> list[Position]:
         """Open positions. MetaTrader answers ``None`` when the call itself failed (as against an

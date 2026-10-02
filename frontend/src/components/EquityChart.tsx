@@ -11,6 +11,8 @@ interface Props {
   /** The balance the account started with: the baseline the shading is measured from. */
   baseline: number;
   intraday: boolean;
+  /** What to say while there is no curve yet. */
+  empty?: string;
 }
 
 const PAD = { top: 12, right: 12, bottom: 22, left: 64 };
@@ -26,7 +28,7 @@ function niceTicks(lo: number, hi: number, wanted = 4): number[] {
   return out;
 }
 
-export function EquityChart({ points, baseline, intraday }: Props) {
+export function EquityChart({ points, baseline, intraday, empty = "The curve appears once the replay has moved." }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<number | null>(null);
@@ -125,7 +127,7 @@ export function EquityChart({ points, baseline, intraday }: Props) {
           )}
         </svg>
       ) : (
-        <p className="rp-empty">The curve appears once the replay has moved.</p>
+        <p className="rp-empty">{empty}</p>
       )}
 
       {at && atXY && geo && (

@@ -61,6 +61,23 @@ export interface AccountInfo {
   profit: number;
   leverage: number;
   name: string;
+  /** What else the broker says about the account (empty or zero where it says nothing). */
+  company?: string;
+  credit?: number;
+  /** Percent; 0 while no margin is in use. */
+  margin_level?: number;
+  margin_call_level?: number;
+  stop_out_level?: number;
+  stop_out_mode?: "percent" | "money" | "";
+  trade_mode?: "demo" | "contest" | "real" | "";
+  margin_mode?: "netting" | "exchange" | "hedging" | "";
+  /** The most pending orders the broker allows (0: no limit). */
+  limit_orders?: number;
+  fifo_close?: boolean;
+  currency_digits?: number;
+  assets?: number;
+  liabilities?: number;
+  commission_blocked?: number;
 }
 
 export interface Position {
@@ -355,11 +372,99 @@ export interface ReplaySummary {
   max_drawdown_pct: number;
 }
 
+/** The replay's figures and what a broker's own report adds to them (the same for the replay and the live account). */
+export interface PerformanceSummary extends ReplaySummary {
+  /** Net profit over the largest drawdown; null without a drawdown. */
+  recovery_factor: number | null;
+  /** The mean of the trades' returns over their spread; null below three trades. */
+  sharpe: number | null;
+  long_trades: number;
+  long_wins: number;
+  short_trades: number;
+  short_wins: number;
+  avg_win_streak: number;
+  avg_loss_streak: number;
+  /** What the longest winning / losing streak made / lost. */
+  max_win_streak_amount: number;
+  max_loss_streak_amount: number;
+  /** The winning streak that made the most / the losing streak that lost the most, and how many trades each had. */
+  best_win_streak_amount: number;
+  best_win_streak_amount_trades: number;
+  worst_loss_streak_amount: number;
+  worst_loss_streak_amount_trades: number;
+  longest_duration: number;
+  shortest_duration: number;
+  /** Lots traded. */
+  total_volume: number;
+  /** What the closed trades cost (zero or negative). */
+  commission: number;
+  swap: number;
+  fees: number;
+  /** How far the balance stood below the money put in, at the most. */
+  drawdown_absolute: number;
+}
+
+/** What the closed trades of one instrument made. */
+export interface SymbolStats {
+  symbol: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  net_profit: number;
+  volume: number;
+}
+
 export interface ReplayReport {
   account: ReplayAccount;
-  summary: ReplaySummary;
+  summary: PerformanceSummary;
   equity: EquityPoint[];
   trades: BacktestTrade[];
+  symbols: SymbolStats[];
+}
+
+/** A position of the broker's account that is closed: its fills put together. `pnl` is after its costs. */
+export interface ClosedTrade extends BacktestTrade {
+  /** The price result alone, before the costs. */
+  profit: number;
+  commission: number;
+  swap: number;
+  fee: number;
+  comment: string;
+}
+
+/** Money that moved without being trading. */
+export interface AccountFlows {
+  deposits: number;
+  /** A positive number. */
+  withdrawals: number;
+  credit: number;
+  bonus: number;
+  corrections: number;
+  /** Fees, interest, dividends and taxes booked to the account (negative: it paid). */
+  charges: number;
+  operations: number;
+}
+
+/** The live account's performance report, worked out from the broker's own history (see backend/app/performance.py). */
+export interface AccountReport {
+  account: AccountInfo;
+  summary: PerformanceSummary;
+  /** The account's level after each deal that moved it (deposits and withdrawals left out), then as it is now. */
+  equity: EquityPoint[];
+  /** The newest closed trades, oldest first. */
+  trades: ClosedTrade[];
+  trades_total: number;
+  symbols: SymbolStats[];
+  flows: AccountFlows;
+  /** The level the curve starts from: the money first put in. */
+  initial_balance: number;
+  /** Net profit as a share of that; null when there is nothing to measure it by. */
+  return_pct: number | null;
+  open_profit: number;
+  deals: number;
+  first_time: number;
+  last_time: number;
 }
 
 export interface IndicatorSpec {

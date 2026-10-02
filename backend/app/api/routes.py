@@ -8,8 +8,10 @@ import time
 from fastapi import APIRouter, HTTPException, Query
 
 from app import __version__
+from app.performance import TRADE_LIMIT, account_report
 from app.schemas import (
     AccountInfo,
+    AccountReport,
     Bar,
     ModifyOrderRequest,
     ModifyRequest,
@@ -119,6 +121,26 @@ def get_account() -> AccountInfo:
         return state.broker.adapter.get_account()
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/account/report", response_model=AccountReport)
+def get_account_report(
+    now: int | None = Query(default=None, description="The time now in the broker's server time, in seconds: where the curve ends."),
+    points: int = Query(default=400, ge=4, le=5000),
+    trades: int = Query(default=TRADE_LIMIT, ge=0, le=50_000, description="How many of the newest closed trades to list."),
+    since: int = Query(default=0, ge=0, description="Report only the period from this moment on (the broker's time, in seconds)."),
+) -> AccountReport:
+    """The account's performance report, worked out from the broker's own history (the same figures and layout
+    as the replay's report): the closed trades, what each instrument made, the account's curve and the money
+    that moved. Reads the account and its whole history from the broker, so it takes a moment on a large one."""
+    state = get_state()
+    adapter = state.broker.adapter
+    try:
+        account = adapter.get_account()
+        deals = adapter.get_deals()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return account_report(deals, account, now=now, points=points, trade_limit=trades, since=since)
 
 
 @router.get("/positions", response_model=list[Position])

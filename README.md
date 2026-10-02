@@ -37,6 +37,10 @@ position boxes that size the trade by risk. If you like it, a ⭐ on this page h
 * **Trade from the chart.** Market and limit / stop orders, stop loss and take profit that you drag into place,
   orders that wait shown on the chart. A long / short box can **buy or sell now** with its stop and target, leave
   a **limit order** at its entry, and size the trade by risk (a % of your balance, an amount, or lots).
+* **Your account's results.** The bar at the bottom shows how the account has done (return, trades, win rate,
+  drawdown, profit factor), worked out from your broker's own history. Click it for the full report: the
+  account's curve, every closed trade with what it cost, every figure MetaTrader's own report has, what each
+  instrument made, and what the broker says about the account. It is the same report the replay has.
 * **Indicators in Python.** The usual ones are built in. Write your own as a small function
   (`compute(df, params)`), draw lines, panes and shapes, and run it in a sandbox.
 * **Bar replay.** Practise on history with a paper account: stop loss / take profit, trade markers, an equity
@@ -542,6 +546,56 @@ server pushes `ticks` (every tick since the last message, oldest first), `state`
 positions and the account, whenever one changes), `feed` (the MetaTrader feed is
 `up`, `slow`, `restarting` or `down`) and answers `ping` with `pong`.
 
+### Your account's performance report
+
+The bar at the bottom of the live chart shows the account's **Balance**, **Equity** and **Open P&L**, and the same
+figures the replay's paper account shows, worked out from the broker's history: **Return**, **Trades** (and how many
+won and lost), **Win rate**, **Max drawdown** and **Profit factor**. The server's name at its left (it carries a
+chevron) opens the report in a drawer above the bar. It is the replay's report (see "Replay"), made from your real
+account:
+
+* **Overview** — net profit, profit factor, win rate, trades (and streaks), max drawdown, average win, average
+  loss, best, worst and average trade, beside the account's curve.
+* **Trades** — every closed trade, newest first: symbol, side, lots, when it opened and closed with the prices,
+  how long it was held, what it cost (commission, swap and fees, when there are any), its P&L after those costs, a
+  running total, and how it ended: stop loss, take profit, stop out (the broker closed it), closed by hand, or
+  closed by a program.
+* **Statistics** — every figure MetaTrader's own report has, in groups: results (net, gross, profit factor,
+  expected payoff, recovery factor, Sharpe ratio, drawdowns), trades (long and short, volume, time held),
+  wins and losses (largest and average, streaks), what the trades cost, the money that moved (deposits,
+  withdrawals, credit, bonus, corrections, charges), and what each instrument made.
+* **Account** — what the broker says about the account: name, login, server, broker, demo / contest / real,
+  netting or hedging, leverage, balance, credit, floating profit, equity, margin, free margin, margin level, the
+  margin call and stop out levels, how many deals the history holds and from when to when.
+
+The choice at the top (**All time**, **This year**, **This month**, **This week**, **Today**) cuts the report to a
+period of the broker's clock: the trades that closed in it, the curve from where the account stood when it began,
+the drawdowns and percentages within it, and the money that moved in it. The bar at the bottom always shows the
+whole history. The circular-arrow button at the right of the report's top bar reads the history again; it is
+also read again a moment after every trade and now and then.
+
+How it is worked out:
+
+* A **trade** is a position that has been closed: all its fills (opened in parts, added to, closed in parts, or
+  reversed on a netting account) are put together by the position they belong to. Its P&L is what the broker
+  booked for those fills: price result plus commission, swap and fees. A position that is still open is not a trade
+  yet; what it has cost so far is in the curve.
+* The **curve** is the level of the account: it starts at the money first put in and follows what trading did to
+  it (fills, their costs, and what the broker charged), then ends where the open positions have it now.
+  **Deposits and withdrawals are left out** of the curve, the drawdowns and the percentages, so putting money in
+  is not a gain and taking it out is not a loss. **Return** is net profit as a share of the money first put in
+  (or, in a period, of what the account held when it began).
+* MetaTrader gives the history it holds: what its **History** tab has loaded. If older trades are missing,
+  open that tab in the terminal and choose **All history**, then press the circular-arrow button. The balance before
+  the history is worked out from the balance now, so a history that does not reach back to the first deposit still
+  adds up. Nothing is ever sent to the broker: the report only reads.
+
+`GET /api/account/report` serves it: `since` (the broker's time, in seconds) cuts it to a period, `trades` says how
+many of the newest closed trades to list (0: only the figures), `points` how many points the curve has and `now`
+(the broker's clock) where it ends. The figures are `backend/app/performance.py`'s, the same code that works out the
+replay's, so a figure means the same in both. `GET /api/account` now also carries what else the broker says about
+the account (credit, margin level, leverage, demo or real, stop out level ...).
+
 ### Replay
 
 Replay walks the chart forward bar by bar from a moment in the past, with a paper
@@ -626,6 +680,9 @@ the side panel opens a drawer above the strip:
 * **Trades** — every closed trade, newest first: side, lots, when it opened and
   closed with the prices, how long it was held, its P&L, a running total, and how it
   ended (stop loss, take profit or closed by hand).
+* **Statistics** — every figure there is, in groups (results, trades, wins and
+  losses), and what each instrument made. The live account has the same report (see
+  "Your account's performance report").
 
 **Performance.** Playback is driven by the browser: at the chosen speed it asks the
 backend (`POST /api/replay/advance`, at most ten times a second) for the next few
@@ -737,6 +794,10 @@ backend/    FastAPI + WebSocket; broker adapters, cache, indicator engine,
 - **Data layer** (`backend/app/data/`): TTL cache, universal symbol registry and
   the persistent bar store.
 - **API** (`backend/app/api/`): REST routes + the `/ws/stream` WebSocket.
+- **Performance figures** (`backend/app/performance.py`): the report's figures from a list of closed
+  trades (the replay's paper account and the broker's history are both turned into one), the broker's
+  deals put together into trades, and the account's curve. `BrokerAdapter.get_deals()` reads the history
+  (MetaTrader: `history_deals_get`, in the reader process).
 - **Live feed** (`backend/app/stream/`): `FeedLoop` polls a `Source` for new ticks and
   for changes to the positions and the account; `Mt5Source` reads them from the
   terminal (all ticks since the last look, `copy_ticks_from`), run in its own process by
@@ -750,11 +811,12 @@ backend/    FastAPI + WebSocket; broker adapters, cache, indicator engine,
   (range bar) and `AccountStrip` make up the chrome. The chart is `Chart` plus the
   DOM overlays that sit on it: `ChartLegend`, `PriceTags`, `PositionOverlay`,
   `ReplayPicker` and `ReplayCut` (choosing the start bar) or `ReplayToolbar`
-  (the transport bar), and `ReplayReport` (the drawer above the strip, with
-  `EquityChart`). `OrderPanel`, `ReplayTradePanel` (both built on `OrderTicket`),
+  (the transport bar), and `PerformanceReport` (the drawer above the strip, for the
+  replay's paper account and for the live account, with `EquityChart`). `OrderPanel`, `ReplayTradePanel` (both built on `OrderTicket`),
   `IndicatorManager` and `DataCoverage` fill the dock. `lib/useReplay.ts` runs a
   replay (start, playback, the paper account) and `lib/replayMarkers.ts` turns its
-  trades into chart marks.
+  trades into chart marks. `lib/useAccountReport.ts` reads the live account's report and
+  `lib/performance.ts` turns either report into what the drawer shows.
 - **What the chart shows is one `frame`** (`frontend/src/lib/useChartData.ts`): the
   candles, the symbol and interval they belong to, and what to do with the view when
   they arrive (`latest`, `anchor`, `keep` or `none` — see `ViewPolicy` in

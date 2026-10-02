@@ -23,6 +23,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from app.performance import summarize, thin_curve
 from app.schemas import (
     BacktestMetrics,
     BacktestTrade,
@@ -30,9 +31,9 @@ from app.schemas import (
     EquityPoint,
     OrderRequest,
     OrderResult,
+    PerformanceSummary,
     Position,
     ReplayAccount,
-    ReplaySummary,
 )
 
 logger = logging.getLogger(__name__)
@@ -538,74 +539,18 @@ class PaperTradingEngine:
             profile_name=self.name,
         )
 
-    def summary(self, current: float) -> ReplaySummary:
-        """The figures of a performance report (what TradingView calls the strategy overview)."""
-        trades = list(self.closed)
-        wins = [t.pnl for t in trades if t.pnl > 0]
-        losses = [t.pnl for t in trades if t.pnl < 0]
-        gross_profit = sum(wins)
-        gross_loss = -sum(losses)
-        net = sum(t.pnl for t in trades)
-        avg_win = gross_profit / len(wins) if wins else 0.0
-        avg_loss = gross_loss / len(losses) if losses else 0.0
+    def summary(self, current: float) -> PerformanceSummary:
+        """The figures of a performance report (what TradingView calls the strategy overview).
 
-        win_streak = loss_streak = best_win = best_loss = 0
-        for t in trades:
-            if t.pnl > 0:
-                win_streak, loss_streak = win_streak + 1, 0
-            elif t.pnl < 0:
-                win_streak, loss_streak = 0, loss_streak + 1
-            else:
-                win_streak = loss_streak = 0
-            best_win = max(best_win, win_streak)
-            best_loss = max(best_loss, loss_streak)
-
+        Worked out by ``performance.summarize``, as the broker's report is: the drawdown is the one of this
+        session's equity curve, counting the account as it is now.
+        """
         dd_value, dd_pct = self._drawdown(self.equity(current))
-        return ReplaySummary(
-            net_profit=net,
-            gross_profit=gross_profit,
-            gross_loss=gross_loss,
-            trades=len(trades),
-            wins=len(wins),
-            losses=len(losses),
-            win_rate=(len(wins) / len(trades) * 100) if trades else 0.0,
-            profit_factor=(gross_profit / gross_loss) if gross_loss > 0 else None,
-            avg_win=avg_win,
-            avg_loss=avg_loss,
-            payoff_ratio=(avg_win / avg_loss) if avg_loss > 0 and avg_win > 0 else None,
-            largest_win=max(wins, default=0.0),
-            largest_loss=min(losses, default=0.0),
-            avg_trade=(net / len(trades)) if trades else 0.0,
-            avg_duration=int(sum(max(0, t.exit_time - t.entry_time) for t in trades) / len(trades))
-            if trades
-            else 0,
-            max_win_streak=best_win,
-            max_loss_streak=best_loss,
-            max_drawdown=dd_value,
-            max_drawdown_pct=dd_pct,
-        )
+        return summarize(list(self.closed), max_drawdown=dd_value, max_drawdown_pct=dd_pct, capital=self.initial_balance)
 
     def equity_points(self, limit: int = 400) -> list[EquityPoint]:
         """The equity curve, thinned to about ``limit`` points without losing its peaks and troughs."""
-        curve = list(self._equity_curve)
-        if len(curve) <= limit or limit < 4:
-            return [EquityPoint(time=int(p["time"]), value=p["value"]) for p in curve]
-
-        # One high and one low per bucket, in time order, bracketed by the very first
-        # and last points (the curve should start at the opening balance and end now).
-        buckets = max(1, limit // 2)
-        size = len(curve) / buckets
-        picked: list[dict[str, float]] = []
-        for b in range(buckets):
-            chunk = curve[int(b * size) : int((b + 1) * size)] or [curve[min(int(b * size), len(curve) - 1)]]
-            lo = min(chunk, key=lambda p: p["value"])
-            hi = max(chunk, key=lambda p: p["value"])
-            picked.extend(sorted({id(lo): lo, id(hi): hi}.values(), key=lambda p: p["time"]))
-        if picked[0] is not curve[0]:
-            picked.insert(0, curve[0])
-        if picked[-1] is not curve[-1]:
-            picked.append(curve[-1])
-        return [EquityPoint(time=int(p["time"]), value=p["value"]) for p in picked]
+        return thin_curve([(p["time"], p["value"]) for p in self._equity_curve], limit)
 
     def reset(self, balance: float | None = None) -> None:
         """Start the account over: no positions, no history, the balance back to what it began with

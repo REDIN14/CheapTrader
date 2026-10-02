@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.performance import symbol_stats
 from app.replay.engine import ReplayEngine
 from app.schemas import (
     TIMEFRAME_SECONDS,
@@ -309,6 +310,7 @@ def report(points: int = Query(default=400, ge=4, le=5000)) -> ReplayReport:
         summary=engine.paper.summary(price),
         equity=engine.paper.equity_points(points),
         trades=list(engine.paper.closed),
+        symbols=symbol_stats(engine.paper.closed),
     )
 
 

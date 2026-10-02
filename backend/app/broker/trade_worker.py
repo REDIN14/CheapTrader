@@ -19,7 +19,7 @@ The conversation with the server is JSON lines:
   ``modify_position`` (a ModifyRequest), ``close_position`` (``{"ticket": n}``),
   ``cancel_order`` (``{"ticket": n}``), ``modify_order`` (a ModifyOrderRequest), and the
   reads ``list_symbols``, ``get_symbol``, ``get_bars``, ``get_tick``, ``get_ticks``, ``get_account``,
-  ``get_positions``, ``get_orders``, plus ``ping``
+  ``get_positions``, ``get_orders``, ``get_deals`` (the account's history), plus ``ping``
 * answers: ``{"id": 7, "ok": true, "r": ...}`` or ``{"id": 7, "ok": false, "error": "..."}``
 
 Requests are handled one at a time, in the order they arrive. When the server goes
@@ -77,6 +77,8 @@ def answer(adapter, method: str, args: dict):
         return adapter.get_terminal().model_dump()
     if method == "get_account":
         return adapter.get_account().model_dump()
+    if method == "get_deals":
+        return [d.model_dump() for d in adapter.get_deals()]
     if method == "get_positions":
         positions = adapter.get_positions(args.get("symbol"), strict=bool(args.get("strict")))
         return [p.model_dump() for p in positions]

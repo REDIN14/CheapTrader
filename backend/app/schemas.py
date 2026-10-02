@@ -104,6 +104,45 @@ class AccountInfo(BaseModel):
     profit: float = 0.0
     leverage: int = 0
     name: str = ""
+    # What else the broker tells about the account (MetaTrader's account_info). Empty or zero where it tells nothing.
+    company: str = ""
+    credit: float = 0.0
+    margin_level: float = 0.0  # percent; 0 while no margin is in use
+    margin_call_level: float = 0.0
+    stop_out_level: float = 0.0
+    stop_out_mode: str = ""  # "percent" | "money"
+    trade_mode: str = ""  # "demo" | "contest" | "real"
+    margin_mode: str = ""  # "netting" | "exchange" | "hedging"
+    limit_orders: int = 0  # the most pending orders the broker allows (0: no limit)
+    fifo_close: bool = False
+    currency_digits: int = 2
+    assets: float = 0.0
+    liabilities: float = 0.0
+    commission_blocked: float = 0.0
+
+
+class Deal(BaseModel):
+    """One line of the broker's history: a fill, or an operation on the balance (a deposit, a charge ...)."""
+
+    ticket: int
+    position_id: int = 0  # the position a fill belongs to (all of its fills share it)
+    order: int = 0
+    time: int  # seconds, in the broker's server time like every other time here
+    time_msc: int = 0
+    # buy | sell | balance | credit | charge | correction | bonus | commission | interest | dividend | tax | canceled | other
+    kind: str
+    entry: str = ""  # in | out | inout | out_by; empty for an operation on the balance
+    symbol: str = ""
+    volume: float = 0.0
+    price: float = 0.0
+    profit: float = 0.0
+    commission: float = 0.0
+    swap: float = 0.0
+    fee: float = 0.0
+    # client | mobile | web | expert | sl | tp | so | rollover | vmargin | split, or empty
+    reason: str = ""
+    comment: str = ""
+    magic: int = 0
 
 
 class TerminalInfo(BaseModel):
@@ -432,11 +471,98 @@ class ReplaySummary(BaseModel):
     max_drawdown_pct: float
 
 
+class PerformanceSummary(ReplaySummary):
+    """The replay's figures and what a broker's own report adds to them (see performance.py)."""
+
+    recovery_factor: float | None = None  # net profit / the largest drawdown; None without a drawdown
+    sharpe: float | None = None  # mean / spread of the trades' returns; None below three trades
+    long_trades: int = 0
+    long_wins: int = 0
+    short_trades: int = 0
+    short_wins: int = 0
+    avg_win_streak: float = 0.0
+    avg_loss_streak: float = 0.0
+    max_win_streak_amount: float = 0.0  # what the longest winning streak made
+    max_loss_streak_amount: float = 0.0  # what the longest losing streak lost (zero or negative)
+    best_win_streak_amount: float = 0.0  # the winning streak that made the most, and its length
+    best_win_streak_amount_trades: int = 0
+    worst_loss_streak_amount: float = 0.0  # the losing streak that lost the most (zero or negative), and its length
+    worst_loss_streak_amount_trades: int = 0
+    longest_duration: int = 0  # seconds
+    shortest_duration: int = 0
+    total_volume: float = 0.0  # lots traded
+    commission: float = 0.0  # what the closed trades cost, in account units (zero or negative)
+    swap: float = 0.0
+    fees: float = 0.0
+    drawdown_absolute: float = 0.0  # how far the balance stood below the money put in, at the most
+
+
+class SymbolStats(BaseModel):
+    """What the closed trades of one instrument made."""
+
+    symbol: str
+    trades: int
+    wins: int
+    losses: int
+    win_rate: float
+    net_profit: float
+    volume: float
+
+
 class ReplayReport(BaseModel):
     account: ReplayAccount
-    summary: ReplaySummary
+    summary: PerformanceSummary
     equity: list[EquityPoint]
     trades: list[BacktestTrade]
+    symbols: list[SymbolStats] = []
+
+
+class ClosedTrade(BacktestTrade):
+    """A position of the broker's account that is closed: its fills put together (see performance.py).
+
+    ``pnl`` is what the position made after its costs; ``profit`` is the price result alone.
+    """
+
+    profit: float = 0.0
+    commission: float = 0.0
+    swap: float = 0.0
+    fee: float = 0.0
+    comment: str = ""
+
+
+class AccountFlows(BaseModel):
+    """Money that moved without being trading: what was put in and taken out, and what the broker booked."""
+
+    deposits: float = 0.0
+    withdrawals: float = 0.0  # a positive number
+    credit: float = 0.0  # credit the broker gave (it is no part of the balance)
+    bonus: float = 0.0
+    corrections: float = 0.0
+    charges: float = 0.0  # fees, interest, dividends and taxes booked to the account (negative: it paid)
+    operations: int = 0
+
+
+class AccountReport(BaseModel):
+    """The account's performance report, worked out from the broker's own history."""
+
+    account: AccountInfo
+    summary: PerformanceSummary
+    #: The account's level after each deal that moved it (without deposits and withdrawals), then as it is now.
+    equity: list[EquityPoint]
+    #: The newest closed trades, oldest first; ``trades_total`` says how many there are.
+    trades: list[ClosedTrade]
+    trades_total: int
+    symbols: list[SymbolStats]
+    flows: AccountFlows
+    #: The level the curve starts from: the money first put in (or the balance before the history).
+    initial_balance: float
+    #: Net profit as a share of that, in percent (None when there is nothing to measure it by).
+    return_pct: float | None
+    #: Profit that is still open, and the share of the level it makes.
+    open_profit: float
+    deals: int
+    first_time: int
+    last_time: int
 
 
 class UpdateResult(BaseModel):

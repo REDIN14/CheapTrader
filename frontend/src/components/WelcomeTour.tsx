@@ -295,6 +295,7 @@ function Trading({ status }: { status: TerminalStatus | null }) {
           the position or removes that level.
         </li>
         <li>Orders that wait show on the chart too: drag them to move them, ✕ takes them back.</li>
+        <li>The bar at the bottom shows how the account has done; click its name for the full report.</li>
       </ul>
       <Callout tone="warn">
         <b>Sending orders is off until you switch it on.</b> Open the <b>MetaTrader</b> menu in the bottom bar and turn on{" "}

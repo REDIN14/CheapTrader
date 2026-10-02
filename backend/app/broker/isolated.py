@@ -38,6 +38,7 @@ from app.procutil import child_log, kill_tree, module_command
 from app.schemas import (
     AccountInfo,
     Bar,
+    Deal,
     ModifyOrderRequest,
     ModifyRequest,
     OrderRequest,
@@ -59,6 +60,8 @@ CALL_TIMEOUT = 30.0
 #: something else is working the terminal hard (a big history download by another
 #: program) a new connection can take twenty seconds or more.
 START_TIMEOUT = 90.0
+#: The whole history of an account may have to be fetched from the broker by the terminal first.
+HISTORY_TIMEOUT = 90.0
 
 
 def mt5_settings(settings: Settings) -> dict:
@@ -294,7 +297,7 @@ class IsolatedMT5Adapter(MT5Adapter):
             raise BrokerError("MT5 adapter is not connected")
 
     # -- reads: the reader process ---------------------------------------------
-    def _ask(self, method: str, args: dict) -> object:
+    def _ask(self, method: str, args: dict, timeout: float = CALL_TIMEOUT) -> object:
         """One read. Requests for exactly the same thing that arrive while one is on its way
         share its answer, so a slow terminal never makes them queue up one behind another."""
         self._require()
@@ -308,7 +311,7 @@ class IsolatedMT5Adapter(MT5Adapter):
         if not leader:
             return flight.result()
         try:
-            answer = self._reader.call(method, args)
+            answer = self._reader.call(method, args, timeout)
         except BaseException as exc:
             flight.set_exception(exc)
             raise
@@ -349,6 +352,9 @@ class IsolatedMT5Adapter(MT5Adapter):
 
     def get_account(self) -> AccountInfo:
         return AccountInfo(**self._ask("get_account", {}))  # type: ignore[arg-type]
+
+    def get_deals(self) -> list[Deal]:
+        return [Deal(**d) for d in self._ask("get_deals", {}, HISTORY_TIMEOUT)]  # type: ignore[union-attr]
 
     def get_positions(self, symbol: str | None = None, *, strict: bool = False) -> list[Position]:
         rows = self._ask("get_positions", {"symbol": symbol, "strict": strict})

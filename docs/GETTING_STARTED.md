@@ -88,7 +88,8 @@ Several brokers installed? CheapTrader takes the one that is running, else the o
 | Drawing tools | the bar at the left of the chart: see the [drawing guide](DRAWINGS.md) |
 | Indicators | **Indicators** in the top bar, and your own in Python: see the [indicator guide](INDICATORS.md) |
 | Trade panel | **Trade** in the top bar (Market and Limit orders, stop loss, take profit) |
-| Bar Replay | **Replay** in the top bar (§6) |
+| Your account's results | the server's name at the left of the bar at the bottom (§6) |
+| Bar Replay | **Replay** in the top bar (§7) |
 | Help | the **?** button at the right edge: shortcuts, this tour, documentation, About |
 
 ---
@@ -108,7 +109,22 @@ when something stops the terminal from taking orders.
 
 ---
 
-## 6. Practise first: Replay
+## 6. How your account is doing
+
+The bar at the bottom of the chart shows your **Balance**, **Equity** and **Open P&L**, and how the account has
+done so far: **Return**, **Trades**, **Win rate**, **Max drawdown** and **Profit factor**. They are worked out
+from your broker's own history, the closed trades of the whole account.
+
+Click the server's name at the left of the bar for the full report: the account's curve, every closed trade
+(with what it cost in commission and swap), every statistic MetaTrader's own report has, what each instrument
+made, and what the broker says about the account. The choice at the top cuts it to this year, month, week or
+today. Deposits and withdrawals are left out of the curve and the percentages, so putting money in is not a
+gain. If trades are missing, open the **History** tab in MetaTrader and choose **All history**, then press the
+circular-arrow button at the right of the report's top bar to read it again.
+
+---
+
+## 7. Practise first: Replay
 
 **Replay** runs history bar by bar with a paper account. Click *Replay* in the top bar, click the candle to
 start from, then play, pause or step (`Space`, `Right arrow`). Buy and sell with stop loss and take profit;
@@ -123,7 +139,7 @@ price, so the result is not lost.
 
 ---
 
-## 7. When something does not work
+## 8. When something does not work
 
 | Problem | Cause and cure |
 | --- | --- |

@@ -1,13 +1,15 @@
 // The slim account bar at the very bottom — the place TradingView keeps its
 // "Paper Trading" strip.
 //
-// Live: who the orders go to, and the account's balance / equity / profit.
-// Replay: the paper account's figures. The name is a button that opens and closes
-// the performance report above the strip. Either way it is read-only; trading
+// Live: who the orders go to, and the account's balance / equity / profit, and the same figures
+// the replay shows, worked out from the broker's history (return, trades, win rate, drawdown,
+// profit factor). Replay: the paper account's figures. The name is a button that opens and
+// closes the performance report above the strip, in both. Either way it is read-only; trading
 // itself happens from the chart's Sell / Buy buttons and the Trade panel.
 
 import { formatMoney, formatSigned } from "../lib/format";
-import type { AccountInfo, ReplayAccount } from "../lib/types";
+import { profitFactorText } from "../lib/performance";
+import type { AccountInfo, PerformanceSummary, ReplayAccount } from "../lib/types";
 import { ChevronDown, ChevronUp } from "./Icons";
 import { TerminalMenu } from "./TerminalMenu";
 
@@ -21,6 +23,10 @@ interface Props {
   paper: ReplayAccount | null;
   reportOpen: boolean;
   onToggleReport: () => void;
+  /** The live account's figures, from the broker's history (null until they are read). */
+  liveSummary?: PerformanceSummary | null;
+  /** Net profit as a share of the money first put in. */
+  liveReturn?: number | null;
   /** MetaTrader is open but the app is still on made-up prices: the chip offers to connect. */
   canConnect?: boolean;
   /** Open the part of the tour that connects to MetaTrader. */
@@ -63,6 +69,8 @@ export function AccountStrip({
   paper,
   reportOpen,
   onToggleReport,
+  liveSummary = null,
+  liveReturn = null,
   canConnect = false,
   onConnect,
 }: Props) {
@@ -115,12 +123,23 @@ export function AccountStrip({
     );
   }
 
+  const h = liveSummary;
   return (
     <div className="tv-strip">
-      <span className="tv-strip-name" title={account ? `${brokerName} · account ${account.login}` : brokerName}>
+      <button
+        className={reportOpen ? "tv-strip-name tv-strip-toggle open" : "tv-strip-name tv-strip-toggle"}
+        onClick={onToggleReport}
+        aria-expanded={reportOpen}
+        title={
+          reportOpen
+            ? "Hide the account report"
+            : `Show the account report: the figures of the account's whole history · ${brokerName}${account ? ` · account ${account.login}` : ""}`
+        }
+      >
         <i className={account ? "tv-strip-dot on" : "tv-strip-dot"} />
         {account?.server || brokerName}
-      </span>
+        {reportOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+      </button>
       {broker === "mock" && (
         <button
           className={canConnect ? "tv-strip-warn action ready" : "tv-strip-warn action"}
@@ -139,10 +158,30 @@ export function AccountStrip({
           <Stat label="Balance" value={formatMoney(account.balance, ccy)} />
           <Stat label="Equity" value={formatMoney(account.equity, ccy)} />
           <Stat
-            label="Profit"
+            label="Open P&L"
             value={formatMoney(account.profit, ccy, true)}
             tone={toneOf(account.profit)}
+            title="What the open positions make right now"
           />
+          <Stat
+            label="Return"
+            value={liveReturn == null ? "—" : `${formatSigned(liveReturn, 2)}%`}
+            tone={liveReturn == null ? undefined : toneOf(liveReturn)}
+            title="Net profit of the closed trades as a share of the money first put in"
+          />
+          <Stat
+            label="Trades"
+            value={h ? (h.trades ? `${h.trades} (${h.wins}W ${h.losses}L)` : "0") : "—"}
+            title="Closed trades in the account's history"
+          />
+          <Stat label="Win rate" value={h && h.trades ? `${h.win_rate.toFixed(1)}%` : "—"} />
+          <Stat
+            label="Max drawdown"
+            value={h ? (h.max_drawdown_pct > 0 ? `−${h.max_drawdown_pct.toFixed(2)}%` : "0.00%") : "—"}
+            tone={h && h.max_drawdown_pct > 0 ? "down" : undefined}
+            title="The biggest fall of the account from a peak, deposits and withdrawals left out"
+          />
+          <Stat label="Profit factor" value={profitFactorText(h)} title="Gross profit divided by gross loss" />
           <Stat label="Positions" value={String(positionCount)} />
         </div>
       ) : (

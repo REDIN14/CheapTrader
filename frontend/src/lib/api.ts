@@ -17,6 +17,7 @@ import type {
   Position,
   ReplayAccount,
   ReplayProfiles,
+  AccountReport,
   ReplayReport,
   ReplayState,
   ReplayUpdate,
@@ -93,6 +94,20 @@ export const api = {
   dataStats: () => request<DataStat[]>("/api/data/stats"),
 
   account: () => request<AccountInfo>("/api/account"),
+
+  /**
+   * The account's performance report, worked out from the broker's history. `now` is the broker's clock (where the
+   * curve ends), `trades` how many of the newest closed trades to list (0: only the figures), `since` where a
+   * period begins (the broker's time, in seconds; none: the whole history).
+   */
+  accountReport: (opts: { now?: number; points?: number; trades?: number; since?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.now) q.set("now", String(Math.floor(opts.now)));
+    if (opts.since) q.set("since", String(Math.floor(opts.since)));
+    if (opts.points) q.set("points", String(opts.points));
+    if (opts.trades !== undefined) q.set("trades", String(opts.trades));
+    return request<AccountReport>(`/api/account/report?${q.toString()}`);
+  },
 
   positions: (symbol?: string) =>
     request<Position[]>(`/api/positions${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""}`),

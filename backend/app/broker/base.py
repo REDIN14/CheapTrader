@@ -12,6 +12,7 @@ from datetime import datetime
 from app.schemas import (
     AccountInfo,
     Bar,
+    Deal,
     ModifyOrderRequest,
     ModifyRequest,
     OrderRequest,
@@ -82,6 +83,13 @@ class BrokerAdapter(ABC):
     @abstractmethod
     def get_positions(self, symbol: str | None = None) -> list[Position]:
         """Return open positions, optionally filtered by symbol."""
+
+    def get_deals(self) -> list[Deal]:
+        """The account's history as the broker has it: every fill and every operation on the balance, oldest first.
+
+        (What the performance report is made from; a broker that keeps no history has none.)
+        """
+        return []
 
     def get_terminal(self) -> TerminalInfo:
         """What the trading terminal reports about itself (the mock has none)."""

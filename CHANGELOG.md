@@ -2,6 +2,28 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## 0.2.0 — your account's results, in the replay's report
+
+* **How the live account has done.** The bar at the bottom of the live chart shows what the replay's bar shows:
+  return, trades (and how many won and lost), win rate, maximum drawdown and profit factor, worked out from your
+  broker's own history. The server's name at its left opens the full report in a drawer above the bar:
+  * **Overview**: the replay's ten figures beside the account's curve.
+  * **Trades**: every closed trade with its prices, how long it was held, what it cost (commission, swap and
+    fees), its P&L after those costs, a running total and how it ended (stop loss, take profit, stop out, closed
+    by hand).
+  * **Statistics**: every figure MetaTrader's own report has (expected payoff, recovery factor, Sharpe ratio,
+    absolute drawdown, long and short trades, streaks, volume, time held), what the trades cost, the money that
+    moved, and what each instrument made.
+  * **Account**: what the broker says about the account: demo or real, hedging or netting, leverage, credit,
+    margin level, the margin call and stop out levels, how many deals the history holds.
+  * A choice of period: all time, this year, this month, this week, today.
+* It is the replay's report, one component for both: the replay's report gains the **Statistics** tab and shows
+  each trade's prices with the right number of decimals for its own symbol.
+* Deposits and withdrawals are left out of the curve, the drawdowns and the percentages, so putting money in is not
+  a gain. The report only reads: nothing is sent to the broker. MetaTrader gives the history that its History tab
+  holds; choose *All history* there to load the rest.
+* New: `GET /api/account/report`; `GET /api/account` carries more of what the broker says about the account.
+
 ## 0.1.3 — the program opens itself again after an update
 
 * Installing an update from the program now ends with the program open again. In 0.1.2 the update was installed, but
