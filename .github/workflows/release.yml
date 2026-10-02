@@ -80,11 +80,38 @@ jobs:
           } | Set-Content -Encoding ascii SHA256SUMS.txt
           Get-Content SHA256SUMS.txt
 
+      # The text of the release page: how to install, then this version's section of CHANGELOG.md.
+      # (If this step fails, the release still goes out, with GitHub's own generated notes.)
+      - name: Release notes
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.number }}"
+          $text = Get-Content -Raw CHANGELOG.md
+          $m = [regex]::Match($text, "(?ms)^## $([regex]::Escape($version))[^\r\n]*\r?\n(.*?)(?=^## |\z)")
+          $changes = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "See CHANGELOG.md." }
+          $template = @'
+          ## Install
+
+          * **Installer** (`CheapTrader-{VERSION}-setup.exe`) or the **portable zip** (`CheapTrader-{VERSION}-win64.zip`: unzip anywhere, run `CheapTrader.exe`).
+          * You need Windows 10 or 11 (64-bit). For real prices and trading, install **MetaTrader 5**, log in to a (demo) account and leave it open: the welcome tour finds it by itself.
+          * Windows may say "Windows protected your PC" because the program is not signed: click **More info**, then **Run anyway**. Compare your download with `SHA256SUMS.txt` (`Get-FileHash <file> -Algorithm SHA256`).
+          * Orders from the app are **off** until you switch them on in the MetaTrader menu. Trading carries a high risk of losing money: try it on a demo account first.
+
+          ## What is in {VERSION}
+
+          {CHANGES}
+          '@
+          $notes = $template.Replace('{VERSION}', $version).Replace('{CHANGES}', $changes)
+          Set-Content -Path dist-release/RELEASE_NOTES.md -Value $notes -Encoding utf8
+
       - name: Publish
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          name: CheapTrader ${{ steps.version.outputs.number }}
+          body_path: ${{ hashFiles('dist-release/RELEASE_NOTES.md') != '' && 'dist-release/RELEASE_NOTES.md' || '' }}
+          generate_release_notes: ${{ hashFiles('dist-release/RELEASE_NOTES.md') == '' }}
           files: |
             dist-release/CheapTrader-*-win64.zip
             dist-release/CheapTrader-*-setup.exe
