@@ -66,6 +66,30 @@ test("a release's text is cut down to what is new", () => {
   );
 });
 
+test("a bullet that was wrapped by hand is one line again", () => {
+  const notes = [
+    "## What is in 0.2.0",
+    "",
+    "* When the window is hidden and the program is closed, the terminal is closed with it. Before, it stayed",
+    "  running with no window and no taskbar",
+    "  button.",
+    "* Another one.",
+    "  * A nested bullet, which stays one.",
+    "",
+    "  Indented text after a blank line is not joined to anything.",
+  ].join("\n");
+  assert.equal(
+    whatIsNew(notes),
+    [
+      "• When the window is hidden and the program is closed, the terminal is closed with it. Before, it stayed running with no window and no taskbar button.",
+      "• Another one.",
+      "  • A nested bullet, which stays one.",
+      "",
+      "  Indented text after a blank line is not joined to anything.",
+    ].join("\n"),
+  );
+});
+
 test("a release without that heading is shown whole, and other spellings of it are understood", () => {
   assert.equal(whatIsNew("Just a line.\r\n\r\n* one"), "Just a line.\n\n• one");
   assert.equal(whatIsNew("## Install\n\nx\n\n## What's new in 0.3.0\n\n* y"), "• y");

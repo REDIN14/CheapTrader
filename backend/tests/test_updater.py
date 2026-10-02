@@ -470,6 +470,9 @@ def test_the_launch_runs_a_script_and_then_closes_the_program(tmp_path, monkeypa
         return FakeProcess()
 
     monkeypatch.setattr(subprocess, "Popen", popen)
+    # what the one-file program's bootloader leaves in the environment of the running program
+    monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", str(tmp_path / "_MEI123456"))
+    monkeypatch.setenv("_PYI_ARCHIVE_FILE", str(tmp_path / "CheapTrader.exe"))
     order: list[str] = []
     monkeypatch.setattr(updater, "folder", lambda: folder)
     setup = folder / "CheapTrader-0.2.0-setup.exe"
@@ -483,6 +486,10 @@ def test_the_launch_runs_a_script_and_then_closes_the_program(tmp_path, monkeypa
     assert "CheapTrader-0.2.0-setup.exe" in script and "'/SILENT'" in script and "'--reconnect'" in script
     assert script.splitlines()[0].startswith("Set-Content -LiteralPath") and updater_module.STARTED_NOTE in script.splitlines()[0]
     assert call["cwd"] == str(folder)
+    # The program it opens again must unpack itself: with these it would look for the temporary files of the one
+    # that has just closed, find them gone, and stop with "Failed to load Python DLL".
+    assert not [name for name in call["env"] if name.upper().startswith("_PYI_")]
+    assert "PATH" in {name.upper() for name in call["env"]}  # everything else is passed on
     assert call["creationflags"] & subprocess.CREATE_NO_WINDOW
     assert updater.status()["phase"] == "installing"
 

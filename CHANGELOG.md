@@ -2,6 +2,16 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## 0.1.3 — the program opens itself again after an update
+
+* Installing an update from the program now ends with the program open again. In 0.1.2 the update was installed, but
+  the program did not come back: it stopped with the message "Failed to load Python DLL" and had to be started by
+  hand. The program that was being replaced passed its start-up information on to the new one, and that pointed to
+  temporary files which were deleted when the old program closed. The update now starts the new program fresh.
+* Updating *from* 0.1.2 still ends with that message once, because it is 0.1.2 that opens the new version. The update
+  has worked by then: click OK and start CheapTrader. From 0.1.3 on the program restarts by itself.
+* The notes in the update window no longer break in the middle of a sentence.
+
 ## 0.1.2 — a hidden MetaTrader terminal closes with the program
 
 * When the MetaTrader window is hidden (the *Hide the MetaTrader window* switch in the MetaTrader panel) and

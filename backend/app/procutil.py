@@ -7,6 +7,7 @@ import os
 import runpy
 import subprocess
 import sys
+from collections.abc import Mapping
 from typing import IO
 
 from app import paths
@@ -28,6 +29,30 @@ def script_command(script: object, *args: str) -> list[str]:
     if paths.frozen():
         return [sys.executable, "--script", str(script), *args]
     return [sys.executable, str(script), *args]
+
+
+#: What the one-file program's bootloader (PyInstaller) puts into the environment of everything the program starts
+#: (``_MEIPASS2`` is what its older versions used).
+_BOOTLOADER_PREFIX = "_PYI_"
+_BOOTLOADER_NAMES = frozenset({"_MEIPASS2"})
+
+
+def fresh_start_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment to start a *new copy* of the program in: one that goes on after this process has ended.
+
+    The built program is a one-file executable. It unpacks itself into a temporary folder, and its bootloader leaves
+    variables in the environment that tell a copy started from here to use that folder. That is what a helper process
+    wants (``module_command``: it ends with its parent). A copy that is to outlive this process must not inherit them:
+    the folder is deleted when this process ends, and the copy stops at once with "Failed to load Python DLL ...
+    python312.dll". That is what happened to the program that an update opened again. Without the variables the copy
+    unpacks itself, as it does when it is started from the Start menu.
+    """
+    source = os.environ if env is None else env
+    return {
+        name: value
+        for name, value in source.items()
+        if not name.upper().startswith(_BOOTLOADER_PREFIX) and name.upper() not in _BOOTLOADER_NAMES
+    }
 
 
 def dispatch(argv: list[str]) -> bool:

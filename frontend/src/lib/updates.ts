@@ -15,25 +15,27 @@ export function formatBytes(bytes: number): string {
 
 /**
  * What a release says is new. A release page starts with how to install and then has a "What is in <version>"
- * section: that section, as plain lines (headings lose their #, bullets become •, bold and code lose their marks).
- * A release without such a heading is shown whole.
+ * section: that section, as plain lines (headings lose their #, bullets become •, bold and code lose their marks,
+ * and a bullet that was wrapped by hand over several lines is one line again, so that the window wraps it its own
+ * way). A release without such a heading is shown whole.
  */
 export function whatIsNew(notes: string): string {
   const text = notes.replace(/\r\n/g, "\n").trim();
   const heading = text.search(/^#{1,3}\s*What(?:'s| is)?\s+(?:new\s+)?in\b.*$/im);
   const body = heading >= 0 ? text.slice(heading).split("\n").slice(1).join("\n") : text;
-  return body
-    .split("\n")
-    .map((line) =>
-      line
-        .replace(/^\s*#{1,6}\s*/, "")
-        .replace(/^(\s*)[*-]\s+/, "$1• ")
-        .replace(/\*\*(.+?)\*\*/g, "$1")
-        .replace(/`([^`]+)`/g, "$1"),
-    )
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const lines: string[] = [];
+  for (const raw of body.split("\n")) {
+    const line = raw
+      .replace(/^\s*#{1,6}\s*/, "")
+      .replace(/^(\s*)[*-]\s+/, "$1• ")
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1");
+    // an indented line that is no bullet goes on with the line before it
+    const goesOn = /^\s+[^\s•]/.test(line) && lines.length > 0 && lines[lines.length - 1].trim() !== "";
+    if (goesOn) lines[lines.length - 1] += " " + line.trim();
+    else lines.push(line);
+  }
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** How much of a download is done, 0 to 100, or null while its size is not known. */

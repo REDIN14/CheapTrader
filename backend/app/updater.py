@@ -12,7 +12,10 @@ What it does, and what it never does
   SHA-256 is compared with the line for that file in the release's ``SHA256SUMS.txt``, and only then is it run:
   silently, after this program has closed. A small PowerShell script does that, because the program cannot wait
   for its own exit: it waits until ``CheapTrader.exe`` can be written to, runs the installer, records how that
-  went and opens the program again. The installer replaces the program and leaves the data folder alone.
+  went and opens the program again. The installer replaces the program and leaves the data folder alone. The script
+  is started without the variables the one-file program's bootloader left in this process's environment
+  (``procutil.fresh_start_environment``): the program it opens must unpack itself, not look for the temporary files
+  of this one, which are gone by then.
 * Only a copy that the installer set up (it has ``unins000.exe`` beside it) can install itself. A portable copy
   or one run from the source only shows the notice and points at the release page.
 * The downloads are limited to GitHub's own hosts, and a redirect to any other host is refused.
@@ -36,7 +39,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from app import __version__, paths
+from app import __version__, paths, procutil
 from app.preferences import Preferences
 
 logger = logging.getLogger(__name__)
@@ -479,6 +482,7 @@ class Updater:
         process = subprocess.Popen(  # noqa: S603 - a fixed command with quoted paths
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
             cwd=str(self.folder()),
+            env=procutil.fresh_start_environment(),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
