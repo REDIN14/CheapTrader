@@ -17,9 +17,10 @@ frontend/tests/.build/
 # Settings and secrets (backend/.env holds the MetaTrader login; backend/.env.example is the template)
 .env
 
-# The program's own data: the bar history of your broker, your drawings and indicators, logs
-backend/data/
-data/
+# The program's own data: the bar history of your broker, your drawings and indicators, logs.
+# (Anchored on purpose: an unanchored "data/" also hid the source package backend/app/data/.)
+/backend/data/
+/data/
 *.db
 *.db-shm
 *.db-wal
