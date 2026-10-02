@@ -4,12 +4,22 @@
 
 # CheapTrader
 
-**A free, TradingView-style trading platform for MetaTrader 5.** Live charts, drawing tools that can place
-trades, indicators you write in Python, and bar replay with a paper account. For Windows. Open source (MIT).
+**Free, open-source TradingView-style charts for MetaTrader 5 (MT5).** Draw a trade on the chart and send it,
+write your own indicators in Python, and practise on history with bar replay and a paper account. For Windows. No
+account, no sign-up, nothing leaves your PC.
 
-**[Download](../../releases/latest)** &nbsp;·&nbsp; [Getting started](docs/GETTING_STARTED.md) &nbsp;·&nbsp;
+[![Download](https://img.shields.io/github/v/release/REDIN14/CheapTrader?label=download&color=2962ff&logo=windows&logoColor=white)](../../releases/latest)
+[![CI](https://github.com/REDIN14/CheapTrader/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+[![MIT licence](https://img.shields.io/github/license/REDIN14/CheapTrader?color=555)](LICENSE)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/redin010)
+
+**[⬇ Download for Windows](../../releases/latest)** &nbsp;·&nbsp; [Getting started](docs/GETTING_STARTED.md) &nbsp;·&nbsp;
 [Indicator guide](docs/INDICATORS.md) &nbsp;·&nbsp; [Drawing guide](docs/DRAWINGS.md) &nbsp;·&nbsp;
 [Changelog](CHANGELOG.md)
+
+If you trade on MetaTrader 5 and like the look and feel of TradingView's charts, this is for you: it reads prices
+from your own MT5 terminal (a free demo account is perfect) and can send orders back to it, with long / short
+position boxes that size the trade by risk. If you like it, a ⭐ on this page helps other traders find it.
 
 > **Risk warning.** Trading leveraged products carries a high risk of losing money. CheapTrader is provided
 > "as is", without warranty, and is not financial advice. Try everything on a **demo account** first. Sending
