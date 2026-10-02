@@ -13,7 +13,7 @@ account, no sign-up, nothing leaves your PC.
 [![MIT licence](https://img.shields.io/github/license/REDIN14/CheapTrader?color=555)](LICENSE)
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/redin010)
 
-**[⬇ Download for Windows](../../releases/latest)** &nbsp;·&nbsp; [Getting started](docs/GETTING_STARTED.md) &nbsp;·&nbsp;
+**[⬇ Download for Windows](../../releases/latest)** &nbsp;·&nbsp; [Website](https://redin14.github.io/CheapTrader/) &nbsp;·&nbsp; [Getting started](docs/GETTING_STARTED.md) &nbsp;·&nbsp;
 [Indicator guide](docs/INDICATORS.md) &nbsp;·&nbsp; [Drawing guide](docs/DRAWINGS.md) &nbsp;·&nbsp;
 [Changelog](CHANGELOG.md)
 
