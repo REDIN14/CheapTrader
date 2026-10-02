@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://redin14.github.io/CheapTrader/sitemap.xml

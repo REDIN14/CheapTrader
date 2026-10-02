@@ -1,0 +1,525 @@
+/* CheapTrader site. One stylesheet, no scripts, no outside requests.
+   Type: IBM Plex Sans and Plex Mono (SIL OFL 1.1), served from /fonts.
+   Colours come from the program's own chart: ink #131722, accent #2962ff, green #089981, red #f23645. */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #ffffff;
+  --bg-soft: #f3f4f7;
+  --ink: #131722;
+  --ink-2: #4a5062;
+  --line: #d9dce4;
+  --accent: #1d54e8;
+  --accent-hover: #1442c4;
+  --on-accent: #ffffff;
+  --code-bg: #131722;
+  --code-ink: #d1d4dc;
+
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  --wrap: 72rem;
+  --pad: clamp(1rem, 4vw, 2rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131722;
+    --bg-soft: #1b2030;
+    --ink: #e3e6ee;
+    --ink-2: #a6acbc;
+    --line: #2f3447;
+    --accent: #7ea2ff;
+    --accent-hover: #a3bcff;
+    --on-accent: #0c1020;
+    --code-bg: #0c0f18;
+    --code-ink: #d1d4dc;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 1.0625rem/1.6 var(--sans);
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.18em;
+}
+a:hover {
+  color: var(--accent-hover);
+  text-decoration-thickness: 0.14em;
+}
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  text-wrap: balance;
+}
+h1 {
+  font-size: clamp(2rem, 1.35rem + 2.7vw, 3.2rem);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+}
+h2 {
+  font-size: clamp(1.45rem, 1.2rem + 1vw, 1.9rem);
+  line-height: 1.2;
+}
+h3 {
+  font-size: 1.1875rem;
+  line-height: 1.3;
+}
+p {
+  margin: 0 0 1em;
+  text-wrap: pretty;
+}
+ul,
+ol {
+  margin: 0 0 1em;
+  padding-left: 1.3em;
+}
+li {
+  margin-bottom: 0.45em;
+}
+code,
+kbd {
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+code {
+  padding: 0.08em 0.3em;
+  background: var(--bg-soft);
+  border-radius: 3px;
+}
+pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.wrap {
+  max-width: var(--wrap);
+  margin-inline: auto;
+  padding-inline: var(--pad);
+}
+
+.skip {
+  position: absolute;
+  left: 0.75rem;
+  top: -4rem;
+  z-index: 10;
+  padding: 0.5rem 0.9rem;
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 4px;
+}
+.skip:focus {
+  top: 0.75rem;
+}
+
+/* ---- top bar ---- */
+.site-header {
+  border-bottom: 1px solid var(--line);
+}
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 2rem;
+  padding-block: 0.9rem;
+}
+.name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 1.15rem;
+  text-decoration: none;
+}
+.name img {
+  border-radius: 5px;
+}
+.bar nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+}
+.bar nav a {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.bar nav a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* ---- the first screen: the name and the short explanation side by side, the picture large below ---- */
+.hero {
+  padding-block: clamp(2rem, 6vw, 4rem) clamp(1.5rem, 4vw, 3rem);
+}
+.hero-head {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  gap: 1.5rem clamp(2rem, 5vw, 4.5rem);
+  align-items: start;
+}
+.hero h1 {
+  margin: 0 0 1.25rem;
+}
+.nowrap {
+  white-space: nowrap;
+}
+.lead {
+  max-width: 36rem;
+  margin-bottom: 0;
+  font-size: 1.1875rem;
+}
+.hero-side {
+  padding-top: 0.6rem;
+}
+.get {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin: 0 0 0.9rem;
+}
+.button {
+  display: inline-block;
+  padding: 0.8rem 1.4rem;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.button:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--on-accent);
+}
+.meta {
+  margin-bottom: 0.6rem;
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+}
+.meta.mono {
+  font-family: var(--mono);
+  font-size: 0.84rem;
+}
+.hero-shot {
+  margin-top: clamp(2rem, 5vw, 3.25rem);
+}
+
+figure {
+  margin: 0;
+}
+figure img {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+figcaption {
+  max-width: 44rem;
+  margin-top: 0.6rem;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* ---- features: one row each, text and picture swap sides ---- */
+.features > h2 {
+  padding-top: clamp(1rem, 3vw, 2rem);
+}
+.feature {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: start;
+  padding-block: clamp(2rem, 5vw, 3.5rem);
+  border-top: 1px solid var(--line);
+}
+.features > h2 + .feature {
+  margin-top: 1.25rem;
+}
+.feature:nth-of-type(even) {
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+}
+.feature:nth-of-type(even) .text {
+  order: 2;
+}
+.feature h3 {
+  margin-bottom: 0.75rem;
+}
+.feature .text p {
+  max-width: 36rem;
+}
+
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.55rem 1.25rem;
+  margin: 1.4rem 0 0;
+  font-size: 0.9375rem;
+}
+dl.facts dt {
+  padding-top: 0.12rem;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+dl.facts dd {
+  margin: 0;
+}
+
+pre {
+  margin: 1.25rem 0 0;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  border-radius: 6px;
+  font: 400 0.875rem/1.6 var(--mono);
+  tab-size: 4;
+}
+pre .k {
+  color: #ff8a9b;
+}
+pre .f {
+  color: #8fb0ff;
+}
+pre .s {
+  color: #8ee3c6;
+}
+pre .c {
+  color: #8b92a8;
+}
+
+.small-things {
+  padding-block: clamp(2rem, 5vw, 3.5rem);
+  border-top: 1px solid var(--line);
+}
+.small-things h3 {
+  margin-bottom: 1rem;
+}
+.small-things ul {
+  columns: 2 22rem;
+  column-gap: 3rem;
+  padding-left: 1.1em;
+}
+.small-things li {
+  break-inside: avoid;
+}
+
+/* ---- text sections: the heading in the margin, the text beside it ---- */
+.doc {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 8fr);
+  gap: 1rem clamp(1.5rem, 4vw, 3.5rem);
+  padding-block: 0 clamp(2rem, 5vw, 3.5rem);
+  margin-top: clamp(2rem, 5vw, 3.5rem);
+}
+.doc::before {
+  content: "";
+  grid-column: 1 / -1;
+  margin-bottom: clamp(1rem, 3vw, 2rem);
+  border-top: 1px solid var(--line);
+}
+.doc > h2 {
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+}
+.doc .body {
+  max-width: 41rem;
+}
+.doc h3 {
+  margin: 1.6rem 0 0.4rem;
+}
+.doc .body > :first-child {
+  margin-top: 0;
+}
+.doc .body > :last-child {
+  margin-bottom: 0;
+}
+
+.doc figure {
+  max-width: 34rem;
+  margin: 1.4rem 0 0;
+}
+
+ol.steps li {
+  padding-left: 0.3em;
+}
+ol.steps li::marker {
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+dl.log {
+  margin: 0;
+}
+dl.log dt {
+  margin-top: 1.5rem;
+  font-weight: 600;
+}
+dl.log dt:first-child {
+  margin-top: 0;
+}
+dl.log dt time {
+  margin-left: 0.6rem;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+dl.log dd {
+  margin: 0.4rem 0 0;
+}
+dl.log ul {
+  margin: 0;
+}
+
+.qa h3 {
+  margin: 1.8rem 0 0.35rem;
+}
+.qa h3:first-child {
+  margin-top: 0;
+}
+.qa p {
+  margin-bottom: 0;
+}
+
+/* ---- footer ---- */
+.site-footer {
+  margin-top: 1rem;
+  padding-block: 2.5rem 3.5rem;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
+.site-footer .cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.5rem 3rem;
+}
+.site-footer h2 {
+  margin-bottom: 0.4rem;
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+.site-footer p {
+  margin: 0 0 0.7em;
+}
+.site-footer a {
+  color: var(--ink-2);
+}
+.site-footer a:hover {
+  color: var(--ink);
+}
+
+/* ---- narrow screens ---- */
+@media (max-width: 52rem) {
+  .hero-head,
+  .feature,
+  .feature:nth-of-type(even),
+  .doc {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .feature:nth-of-type(even) .text {
+    order: 0;
+  }
+  .doc > h2 {
+    position: static;
+  }
+  .button {
+    padding-block: 0.9rem;
+  }
+}
+@media (max-width: 30rem) {
+  dl.facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+  dl.facts dd {
+    margin-bottom: 0.6rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+@media print {
+  .bar nav,
+  .skip {
+    display: none;
+  }
+  a {
+    color: inherit;
+  }
+}
