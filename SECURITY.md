@@ -22,7 +22,15 @@ it, and what an attacker could do with it. You will get an answer as soon as pos
 * It listens on `127.0.0.1` only: other computers cannot reach it.
 * Sending orders is **off** in a fresh install. It has to be switched on in the app (MetaTrader menu) or in
   the settings file (`CT_ALLOW_LIVE_ORDERS=true`).
-* There is no telemetry, no account and no update check: it does not contact the internet by itself.
+* There is no telemetry and no account. The one thing it contacts the internet for by itself is the update
+  check: a request to `api.github.com` for the latest release of this repository, when the program starts and
+  every six hours (switch it off in the About window, or with `CT_UPDATE_CHECK=false`).
+* An update is installed only when you click **Install and restart**. The installer is downloaded over HTTPS
+  from GitHub's own hosts only (a redirect to any other host is refused), its SHA-256 is compared with the one
+  in `SHA256SUMS.txt` of the same release, and only then is it run, silently, by a small script that waits for the
+  program to close. The installer is not code-signed, and the checksum comes from the same release as the file:
+  it protects against a damaged download, not against a release changed on GitHub itself. A copy that was not set
+  up by the installer never installs anything by itself.
 * Indicators run in a sandbox; they cannot import arbitrary modules, open files or reach the network.
 
 ## Supported versions

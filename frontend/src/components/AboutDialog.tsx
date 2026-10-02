@@ -4,6 +4,8 @@
 
 import { useEffect, useRef } from "react";
 import { PROJECT, isWebAddress, issuesUrl, licenseUrl, supportLinks } from "../lib/project";
+import type { UpdateStatus } from "../lib/types";
+import { checkedText, updateLine } from "../lib/updates";
 import { BookIcon, BrandMark, CloseIcon, HeartIcon } from "./Icons";
 
 interface Props {
@@ -11,6 +13,14 @@ interface Props {
   onClose: () => void;
   onDocs: (page: string) => void;
   onTour: () => void;
+  /** Looking for newer versions: what is known, and the few things to do about it. */
+  update: {
+    info: UpdateStatus | null;
+    busy: boolean;
+    onCheck: () => void;
+    onEnabled: (enabled: boolean) => void;
+    onOpen: () => void;
+  };
 }
 
 /** The notice of the chart library, as its licence asks for it. */
@@ -24,7 +34,7 @@ function External({ href, children }: { href: string; children: React.ReactNode 
   );
 }
 
-export function AboutDialog({ version, onClose, onDocs, onTour }: Props) {
+export function AboutDialog({ version, onClose, onDocs, onTour, update }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const support = supportLinks();
   const issues = issuesUrl();
@@ -104,6 +114,43 @@ export function AboutDialog({ version, onClose, onDocs, onTour }: Props) {
                 </a>
               )}
             </div>
+          </section>
+
+          <section>
+            <h3>Updates</h3>
+            {update.info ? (
+              <>
+                <p>
+                  {updateLine(update.info)} <span className="about-muted">{checkedText(update.info)}</span>
+                </p>
+                <label className="about-check">
+                  <input
+                    type="checkbox"
+                    checked={update.info.enabled}
+                    disabled={update.busy}
+                    onChange={(e) => update.onEnabled(e.target.checked)}
+                  />
+                  Look for new versions on GitHub
+                </label>
+                <p className="about-muted">
+                  When this is on, {PROJECT.name} asks GitHub for the latest release a little after it starts and every six
+                  hours. That is the only time it connects to the internet by itself, and nothing but the request itself is
+                  sent. A new version is installed only when you click Install.
+                </p>
+                <div className="tour-actions">
+                  <button className="tour-btn" disabled={update.busy} onClick={update.onCheck}>
+                    Check now
+                  </button>
+                  {update.info.available && (
+                    <button className="tour-btn primary" onClick={update.onOpen}>
+                      Version {update.info.latest}
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="about-muted">The program did not say whether there is a newer version.</p>
+            )}
           </section>
 
           <section>

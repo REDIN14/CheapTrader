@@ -24,3 +24,5 @@ def isolated_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("CT_MT5_AUTODETECT", "false")
     # the test client calls the app "testserver"
     monkeypatch.setenv("CT_ALLOWED_HOSTS", "testserver")
+    # no test may look for a newer release on GitHub (tests of the updater use a server of their own)
+    monkeypatch.setenv("CT_UPDATE_CHECK", "false")

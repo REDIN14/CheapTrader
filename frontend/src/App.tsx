@@ -18,6 +18,8 @@ import { replayMarkers } from "./lib/replayMarkers";
 import { useChartData, type ChartFrame } from "./lib/useChartData";
 import { REPLAY_SPEEDS, useReplay } from "./lib/useReplay";
 import { useReplayProfiles } from "./lib/useReplayProfiles";
+import { useUpdate } from "./lib/useUpdate";
+import { updateChip } from "./lib/updates";
 import type {
   ChartGeometry,
   HoverInfo,
@@ -32,6 +34,7 @@ import { ChartBoundary } from "./components/ChartBoundary";
 import { ChartContextMenu, type ContextMenuItem } from "./components/ChartContextMenu";
 import { ChartLegend, type LegendIndicator, type LegendTrade } from "./components/ChartLegend";
 import { AboutDialog } from "./components/AboutDialog";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { DocsDialog } from "./components/DocsDialog";
 import { DrawingController } from "./components/DrawingLayer";
 import { PaneLegends } from "./components/PaneLegends";
@@ -186,6 +189,10 @@ export default function App() {
   const [tour, setTour] = useState<number | null>(null);
   const [about, setAbout] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
+  // A newer release on GitHub: the backend looks for it by itself; the button is in the top bar.
+  const update = useUpdate();
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateTold, setUpdateTold] = usePersistentState<string>("updateTold", "");
   // MetaTrader is open, but the app is still on made-up prices
   const [canConnect, setCanConnect] = useState(false);
   const [indicatorVersion, setIndicatorVersion] = useState(0);
@@ -280,6 +287,23 @@ export default function App() {
   });
   const replayActive = replay.mode === "running";
   const replayPicking = replay.mode === "picking" || replay.mode === "starting";
+
+  // The program that started after an install says how it went (once: a reload does not say it again). While the
+  // page is still waiting for that program to come back, the page that reloads is the one to say it.
+  const restarting = update.restart !== null;
+  const updateResult = update.info?.result ?? null;
+  useEffect(() => {
+    if (!updateResult || restarting) return;
+    const key = `${updateResult.version}:${updateResult.ok}`;
+    if (key === updateTold) return;
+    setUpdateTold(key);
+    setNotice(updateResult.message);
+  }, [updateResult, restarting, updateTold, setUpdateTold]);
+
+  // The program is about to close for the update: the window that says so opens by itself.
+  useEffect(() => {
+    if (restarting) setUpdateOpen(true);
+  }, [restarting]);
 
   // The paper-trading profiles. The replay trades on the active one, so when a profile is chosen,
   // started over or deleted while a replay runs, the account on screen is read again.
@@ -1618,6 +1642,8 @@ export default function App() {
         onReplay={toggleReplay}
         fullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
+        update={updateChip(update.info)}
+        onUpdate={() => setUpdateOpen(true)}
       />
 
       <div className="tv-body">
@@ -1877,7 +1903,7 @@ export default function App() {
       {error ? (
         <Toast message={error} onDismiss={dismissError} />
       ) : notice ? (
-        <Toast message={notice} tone="info" onDismiss={dismissNotice} />
+        <Toast message={notice} tone="info" duration={updateResult && notice === updateResult.message ? 9000 : undefined} onDismiss={dismissNotice} />
       ) : null}
 
       {tour !== null && (
@@ -1901,6 +1927,35 @@ export default function App() {
           onTour={() => {
             setAbout(false);
             setTour(0);
+          }}
+          update={{
+            info: update.info,
+            busy: update.busy,
+            onCheck: () => void update.check(),
+            onEnabled: (enabled) => void update.setEnabled(enabled),
+            onOpen: () => {
+              setAbout(false);
+              setUpdateOpen(true);
+            },
+          }}
+        />
+      )}
+
+      {updateOpen && update.info && update.info.latest && (update.info.available || update.restart) && (
+        <UpdateDialog
+          info={update.info}
+          busy={update.busy}
+          problem={update.problem}
+          restart={update.restart}
+          onInstall={() => void update.install()}
+          onSkip={() => {
+            void update.skip(update.info?.latest ?? "");
+            setUpdateOpen(false);
+          }}
+          onClose={() => setUpdateOpen(false)}
+          onDismiss={() => {
+            update.dismiss();
+            setUpdateOpen(false);
           }}
         />
       )}

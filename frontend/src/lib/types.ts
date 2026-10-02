@@ -277,6 +277,43 @@ export interface ReplayProfiles {
   profiles: ReplayProfile[];
 }
 
+/** How the last attempt to install an update ended (told once, by the version that started afterwards). */
+export interface UpdateResult {
+  version: string;
+  ok: boolean;
+  message: string;
+}
+
+/** Whether a newer release exists on GitHub, and how installing it is going (the backend: app/updater.py). */
+export interface UpdateStatus {
+  /** The program looks for updates by itself. */
+  enabled: boolean;
+  current: string;
+  /** The newest release GitHub told about, newer or not; null before the first look. */
+  latest: string | null;
+  available: boolean;
+  /** The user chose not to be told about the one that is available. */
+  skipped: boolean;
+  /** This copy can install the release by itself (it was set up by the installer, and the release has what it needs). */
+  can_install: boolean;
+  installable_here: boolean;
+  /** The release page's text. */
+  notes: string;
+  /** The release page on GitHub. */
+  page: string;
+  published: string;
+  /** Bytes of the installer. */
+  size: number;
+  /** Seconds since 1970 of the last look. */
+  checked_at: number | null;
+  error: string | null;
+  phase: "idle" | "downloading" | "verifying" | "installing" | "failed";
+  message: string;
+  done: number;
+  total: number;
+  result: UpdateResult | null;
+}
+
 /** Everything that changed when the replay cursor moved. */
 export interface ReplayUpdate {
   state: ReplayState;

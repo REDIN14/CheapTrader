@@ -34,8 +34,15 @@ window stops the program. The first time, the welcome tour opens by itself.
   file's SHA-256 checksum with the one on the download page.
 * Your drawings, saved settings and the history of bars live in a `data` folder next to `CheapTrader.exe`
   (or, if that folder cannot be written to, in `%LOCALAPPDATA%\CheapTrader\data`). Uninstalling keeps it.
-* Nothing is sent anywhere: there are no accounts and no tracking. CheapTrader only talks to MetaTrader on
-  your own PC.
+* There are no accounts and no tracking. CheapTrader talks to MetaTrader on your own PC, and to GitHub only
+  to ask whether a newer version exists (see "Updating" below). That check can be switched off in the About window.
+
+### Updating
+
+When a newer release is on GitHub, an **Update** button appears at the top of the window. Click it to read what
+is new. **Install and restart** downloads the installer, checks it against the published checksum, closes
+CheapTrader, installs and opens it again. Your data folder is not touched. A portable copy (the zip) cannot
+install itself: the button then opens the release page.
 
 ---
 

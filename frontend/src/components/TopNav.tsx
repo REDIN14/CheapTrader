@@ -19,6 +19,7 @@ import {
   IndicatorsIcon,
   ReplayIcon,
   SearchIcon,
+  UpdateIcon,
 } from "./Icons";
 
 interface Props {
@@ -36,6 +37,9 @@ interface Props {
   onReplay: () => void;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
+  /** A newer version is on GitHub (or being installed): the button that opens its window. */
+  update?: { label: string; tone: "available" | "busy" | "failed"; title: string } | null;
+  onUpdate?: () => void;
 }
 
 export function TopNav(props: Props) {
@@ -134,6 +138,12 @@ export function TopNav(props: Props) {
       </button>
 
       <div className="tv-header-right">
+        {props.update && (
+          <button className={`tv-update ${props.update.tone}`} onClick={props.onUpdate} title={props.update.title}>
+            <UpdateIcon size={18} />
+            <span>{props.update.label}</span>
+          </button>
+        )}
         <button
           className="tv-hbtn tv-icon"
           title={props.fullscreen ? "Exit full screen" : "Full screen"}

@@ -437,3 +437,40 @@ class ReplayReport(BaseModel):
     summary: ReplaySummary
     equity: list[EquityPoint]
     trades: list[BacktestTrade]
+
+
+class UpdateResult(BaseModel):
+    """How the last attempt to install an update ended (read once, when the new version starts)."""
+
+    version: str
+    ok: bool
+    message: str
+
+
+class UpdateStatus(BaseModel):
+    """Whether a newer release exists on GitHub, and how installing it is going (see app/updater.py)."""
+
+    # The check is switched on (in the About window, or by the settings).
+    enabled: bool
+    current: str
+    # The newest release GitHub told about, newer or not; None before the first look.
+    latest: str | None
+    available: bool
+    # The user chose "skip this version" for the one that is available.
+    skipped: bool
+    # This copy can install the release by itself (it was set up by the installer, and the release has what it needs).
+    can_install: bool
+    installable_here: bool
+    notes: str
+    page: str
+    published: str
+    # Bytes of the installer.
+    size: int
+    checked_at: int | None
+    error: str | None
+    # idle | downloading | verifying | installing | failed
+    phase: str
+    message: str
+    done: int
+    total: int
+    result: UpdateResult | None

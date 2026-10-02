@@ -391,3 +391,11 @@ export const HeartIcon = ({ size = 22, ...rest }: IconProps) => (
     <path d="M14 21.4S6.2 16.6 6.2 11.2a4.1 4.1 0 0 1 7.8-1.8 4.1 4.1 0 0 1 7.8 1.8c0 5.4-7.8 10.2-7.8 10.2z" />
   </Icon>
 );
+
+/** An arrow rising from a tray: a newer version is there to be installed. */
+export const UpdateIcon = ({ size = 22, ...rest }: IconProps) => (
+  <Icon size={size} strokeWidth={1.4} {...rest}>
+    <path d="M14 18.6V6.4M9.6 10.6 14 6.2l4.4 4.4" />
+    <path d="M7.2 15.6v4.2a1.4 1.4 0 0 0 1.4 1.4h10.8a1.4 1.4 0 0 0 1.4-1.4v-4.2" />
+  </Icon>
+);

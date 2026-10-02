@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     indicator_timeout: float = 10.0
     indicator_memory_mb: int = 2048
 
+    # Updates (app/updater.py): whether to look for a newer release on GitHub (the user can also switch it off
+    # in the About window), and where. The repository and the API address are only changed to try the updater.
+    update_check: bool = True
+    update_repo: str = "REDIN14/CheapTrader"
+    update_api: str = "https://api.github.com"
+
 
 @lru_cache
 def get_settings() -> Settings:

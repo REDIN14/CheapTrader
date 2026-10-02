@@ -66,6 +66,9 @@ affiliated with, endorsed by or sponsored by MetaQuotes or any broker.
 exception that lets the programs it packs be distributed under any licence). The installer is built with
 [Inno Setup](https://jrsoftware.org/isinfo.php).
 
+The website (not the program) is set in **IBM Plex Sans** and **IBM Plex Mono**, © IBM Corp., under the SIL Open Font
+License 1.1; the fonts and their licence texts are in `site/fonts`.
+
 ---
 
 ## 4. The licences
@@ -77,6 +80,7 @@ The licence texts of the libraries are in their own packages and repositories; t
 * BSD 3-Clause: [https://opensource.org/license/bsd-3-clause](https://opensource.org/license/bsd-3-clause)
 * Mozilla Public License 2.0 (certifi): [https://www.mozilla.org/MPL/2.0/](https://www.mozilla.org/MPL/2.0/)
 * PSF licence: [https://docs.python.org/3/license.html](https://docs.python.org/3/license.html)
+* SIL Open Font License 1.1 (IBM Plex, below): [https://openfontlicense.org](https://openfontlicense.org)
 
 ---
 

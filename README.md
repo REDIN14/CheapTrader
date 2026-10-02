@@ -6,7 +6,8 @@
 
 **Free, open-source TradingView-style charts for MetaTrader 5 (MT5).** Draw a trade on the chart and send it,
 write your own indicators in Python, and practise on history with bar replay and a paper account. For Windows. No
-account, no sign-up, nothing leaves your PC.
+account, no sign-up, no telemetry. The only thing it fetches from the internet by itself is GitHub's list of
+releases, to tell you when a new version is out (you can switch that off).
 
 [![Download](https://img.shields.io/github/v/release/REDIN14/CheapTrader?label=download&color=2962ff&logo=windows&logoColor=white)](../../releases/latest)
 [![CI](https://github.com/REDIN14/CheapTrader/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
@@ -43,8 +44,8 @@ position boxes that size the trade by risk. If you like it, a ⭐ on this page h
   starting balance you choose; they keep their balance and history when a replay ends and when you restart.
 * **Starts without MetaTrader.** On a synthetic market you can look around. Once a terminal is open and logged in,
   the welcome tour (or one click on the chip at the bottom) connects to it, without a restart.
-* **Yours alone.** It runs on your PC and listens on `127.0.0.1` only. No account, no telemetry, nothing is
-  sent anywhere.
+* **Yours alone.** It runs on your PC and listens on `127.0.0.1` only. No account, no telemetry. It looks at
+  GitHub's release list to tell you about a new version, and installs it only when you click (see "Updates").
 
 | | |
 | --- | --- |
@@ -71,6 +72,28 @@ then **Run anyway**. To check that your download is the one that was published, 
 `SHA256SUMS.txt` on the release page: `Get-FileHash .\CheapTrader-<version>-setup.exe -Algorithm SHA256`.
 
 More: **[Getting started](docs/GETTING_STARTED.md)** (including what to do when it does not connect).
+
+## Updates
+
+CheapTrader looks at GitHub's list of releases a little after it starts and every six hours after that. When a
+newer release exists, an **Update** button appears in the top bar. It opens a window with what is new in that
+release. **Install and restart** downloads the installer, checks its SHA-256 against `SHA256SUMS.txt` from the
+same release, closes the program, runs the installer silently and opens the program again; the page reloads
+by itself. Your data folder (drawings, indicators, settings, paper-trading profiles, stored history) is not
+touched. If the download does not match its checksum it is thrown away and nothing is installed.
+
+* Only a copy set up by the installer can install itself. A portable copy (the zip) or one run from the source
+  shows the same window with a link to the release page instead.
+* Nothing is downloaded until you click Install. **Skip this version** hides that release; the next one is offered.
+* The only request made is `GET /repos/REDIN14/CheapTrader/releases/latest` on `api.github.com`, with a
+  `User-Agent` of `CheapTrader/<version>`. Downloads come from GitHub's own hosts only; a redirect anywhere
+  else is refused. Switch the check off in the About window, or with `CT_UPDATE_CHECK=false` in the settings file.
+* The installer is not code-signed, so the checksum comes from the same GitHub release as the file: it guards
+  against a damaged or cut-off download, not against a release that was tampered with on GitHub itself.
+* The code is in `backend/app/updater.py` (the check, the download, the hand-over to a small PowerShell script
+  that waits for the program to close, runs the installer and records its exit code), `backend/app/api/update_routes.py`
+  (`GET /api/update`, `POST /api/update/check`, `/install`, `/skip`, `/enabled`) and, in the page,
+  `lib/useUpdate.ts`, `components/UpdateDialog.tsx` and the Updates section of the About window.
 
 ## Safety
 

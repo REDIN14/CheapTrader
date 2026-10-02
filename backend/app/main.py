@@ -22,6 +22,7 @@ from app.api import (
     replay_router,
     snapshot_router,
     terminal_router,
+    update_router,
     ws_router,
 )
 from app.security import LocalOnly, allowed_origins
@@ -57,6 +58,7 @@ app.include_router(replay_router)
 app.include_router(indicator_router)
 app.include_router(snapshot_router)
 app.include_router(terminal_router)
+app.include_router(update_router)
 app.include_router(drawing_router)
 app.include_router(docs_router)
 app.include_router(ws_router)

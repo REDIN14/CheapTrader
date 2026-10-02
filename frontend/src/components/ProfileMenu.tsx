@@ -50,7 +50,7 @@ type Pending = { id: string; kind: "rename" | "reset" | "delete" | "switch" } | 
 
 const tone = (v: number) => (v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
 
-const WIDTH = 360;
+const WIDTH = 410;
 
 export function ProfileMenu({
   view,

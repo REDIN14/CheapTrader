@@ -4437,6 +4437,107 @@ textarea {
   border-radius: 6px;
   color: var(--ct-axis);
 }
+.about-muted {
+  color: var(--ct-muted);
+  font-size: 13px;
+}
+.about-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+
+/* --- updates: the button in the top bar and the window it opens ------------------------------------- */
+.tv-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-right: 6px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--ct-accent);
+  border-radius: 6px;
+  color: var(--ct-accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tv-update:hover {
+  background: rgba(41, 98, 255, 0.14);
+  color: var(--ct-text-strong);
+}
+.tv-update.busy {
+  border-color: var(--ct-border-strong);
+  color: var(--ct-text);
+}
+.tv-update.failed {
+  border-color: var(--ct-down);
+  color: var(--ct-down);
+}
+@media (max-width: 1100px) {
+  .tv-update {
+    padding: 0 7px;
+  }
+  .tv-update span {
+    display: none;
+  }
+}
+.update-dialog {
+  width: min(640px, 100%);
+}
+.update-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: rgba(41, 98, 255, 0.16);
+  border-radius: 10px;
+  color: var(--ct-accent-text);
+}
+.update-notes {
+  max-height: 240px;
+  margin: 6px 0 4px;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--ct-field);
+  border-radius: 6px;
+  color: var(--ct-text);
+  font: 13px/1.5 var(--ct-font);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  color: var(--ct-axis);
+  font-size: 13px;
+}
+.update-bar {
+  height: 8px;
+  overflow: hidden;
+  background: var(--ct-field);
+  border-radius: 4px;
+}
+.update-bar i {
+  display: block;
+  height: 100%;
+  background: var(--ct-accent);
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+.update-problem {
+  padding: 8px 12px;
+  background: rgba(242, 54, 69, 0.12);
+  border: 1px solid var(--ct-down);
+  border-radius: 6px;
+  color: var(--ct-text);
+}
 
 /* switching orders on, in the MetaTrader menu */
 .tv-tmenu-confirm {

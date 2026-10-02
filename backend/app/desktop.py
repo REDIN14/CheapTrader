@@ -7,6 +7,8 @@ when that window is closed.
 
 * a second start while one is running just opens another window onto the first;
 * ``--no-window`` serves without a window (stop it with Task Manager or ``taskkill``);
+* ``--reconnect`` is what an update starts the new version with: the window the old version left open is
+  used again instead of opening another;
 * ``--console`` also shows the log in a console window, for finding out what went wrong;
 * everything is logged to ``logs/cheaptrader.log`` (the helper processes to ``logs/workers.log``)
   in the program's data folder.
@@ -152,6 +154,17 @@ def visible_titles() -> list[str]:
 def app_window_open(port: int) -> bool:
     """Is there a window showing the app? The page names itself "CheapTrader · 127.0.0.1:<port>"."""
     return any("CheapTrader" in title and f":{port}" in title for title in visible_titles())
+
+
+def window_returns(port: int, within: float = 8.0, *, shown=app_window_open, clock=time.monotonic, sleep=time.sleep) -> bool:
+    """Is a window of the app showing (or about to show) on ``port``? Looks for a few seconds."""
+    deadline = clock() + within
+    while True:
+        if shown(port):
+            return True
+        if clock() >= deadline:
+            return False
+        sleep(0.5)
 
 
 #: How long without a window before the program quits (a page reload, a moment of nothing).
@@ -303,6 +316,13 @@ def run(argv: list[str] | None = None) -> int:
     if "--no-window" in argv:
         thread.join()
         return 0
+
+    if "--reconnect" in argv and window_returns(port):
+        # Started by an update (see app/updater.py): the window of the version that was replaced is still open,
+        # and its page reloads by itself as soon as this server answers. Opening another would make two.
+        logger.info("the window of the previous version is still open and reconnects by itself")
+        wait_until_closed(port, thread.is_alive)
+        return stop(server, thread)
 
     if open_window(url) is None:
         # No Edge or Chrome: the default browser. There is no window of ours to watch then, so the

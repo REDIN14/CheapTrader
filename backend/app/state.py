@@ -13,6 +13,7 @@ from app.data.cache import DataCache
 from app.data.store import BarStore, default_db_path, store_path_for_broker
 from app.data.symbols import SymbolRegistry
 from app.indicators.registry import IndicatorRegistry
+from app import paths
 from app.preferences import preferences
 from app.replay.engine import ReplayEngine
 from app.replay.profiles import ProfileStore
@@ -20,6 +21,7 @@ from app.schemas import TerminalInfo
 from app.stream.factory import make_feed
 from app.stream.hub import MarketHub
 from app.terminals import TerminalWindow
+from app.updater import Updater
 
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,14 @@ class AppState:
         self.replay: ReplayEngine | None = None
         # The paper-trading profiles the replay trades on: they outlive a replay and a restart.
         self.profiles = ProfileStore()
+        # Looks for a newer release on GitHub now and then, and installs it when the user says so.
+        self.updater = Updater(
+            preferences,
+            repo=self.settings.update_repo,
+            api=self.settings.update_api,
+            default_enabled=self.settings.update_check,
+            data_dir=paths.data_dir,
+        )
         # The live feed (ticks, positions, account); created once a broker is connected.
         self.hub: MarketHub | None = None
         # The MetaTrader window: shown or hidden as the user last chose.
@@ -136,8 +146,10 @@ class AppState:
             self.profiles.settle_interrupted()
         except Exception:  # noqa: BLE001 - the profiles are not worth stopping the app for
             logger.warning("could not tidy the paper profiles", exc_info=True)
+        self.updater.start()
 
     def shutdown(self) -> None:
+        self.updater.stop()
         try:
             self.end_replay()
         except Exception:  # noqa: BLE001

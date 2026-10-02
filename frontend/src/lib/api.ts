@@ -22,6 +22,7 @@ import type {
   ReplayUpdate,
   Symbol,
   TerminalStatus,
+  UpdateStatus,
   Tick,
   Timeframe,
 } from "./types";
@@ -283,4 +284,22 @@ export const indicatorApi = {
       `/api/indicators/${encodeURIComponent(id)}/run?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&count=${count}`,
       { method: "POST" },
     ),
+};
+
+/** Looking for a newer release on GitHub and installing it (the backend's app/updater.py). */
+export const updateApi = {
+  status: () => request<UpdateStatus>("/api/update"),
+
+  /** Ask GitHub now. */
+  check: () => request<UpdateStatus>("/api/update/check", { method: "POST" }),
+
+  /** Download the newest release, check it and install it: the program closes and opens again. Rejects, in words, when it cannot. */
+  install: () => request<UpdateStatus>("/api/update/install", { method: "POST" }),
+
+  /** Do not offer this version again. */
+  skip: (version: string) => request<UpdateStatus>("/api/update/skip", { method: "POST", body: JSON.stringify({ version }) }),
+
+  /** Look for updates by itself, or not (remembered). */
+  setEnabled: (enabled: boolean) =>
+    request<UpdateStatus>("/api/update/enabled", { method: "POST", body: JSON.stringify({ enabled }) }),
 };

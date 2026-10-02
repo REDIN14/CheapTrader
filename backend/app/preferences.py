@@ -5,7 +5,9 @@ Kept in ``preferences.json`` in the data folder (next to ``bars.db``), written a
 * ``hide_terminal``     — keep the MetaTrader window hidden while the app runs;
 * ``terminal_path``     — the MetaTrader terminal to use, when several are installed;
 * ``allow_live_orders`` — the user has switched on, in the app, sending orders to the broker;
-* ``replay_profile``    — the paper-trading profile the replay trades on (see ``replay/profiles.py``).
+* ``replay_profile``    — the paper-trading profile the replay trades on (see ``replay/profiles.py``);
+* ``check_updates``     — look for a newer release on GitHub (None: what the settings say, see ``updater.py``);
+* ``update_skipped``    — the version the user chose not to be told about.
 """
 
 from __future__ import annotations
@@ -26,6 +28,8 @@ DEFAULTS: dict[str, Any] = {
     "terminal_path": None,
     "allow_live_orders": False,
     "replay_profile": None,
+    "check_updates": None,
+    "update_skipped": None,
 }
 
 

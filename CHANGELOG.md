@@ -2,7 +2,9 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
-## Unreleased — paper-trading profiles
+## 0.1.1 — profiles, updates, a new site, support links
+
+The 0.1.1 installer was rebuilt on 2 October 2026 so that it includes everything below (the first build of 0.1.1 had only the support links).
 
 **Replay**
 * The paper account is now a **profile**: a named account with a starting balance of your choice. Make as many as
@@ -20,8 +22,21 @@ All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 * New backend routes: `POST /api/replay/stop` and `/api/replay/profiles` (list, make, rename, choose, start over,
   delete). `reset-account` starts only the profile in use over.
 
-## 0.1.1 — support links
+**Updates**
+* The program looks at GitHub's release list a little after it starts and every six hours, and shows an **Update**
+  button when a newer release exists. **Install and restart** downloads the installer, checks its SHA-256 against
+  the release's `SHA256SUMS.txt`, closes the program, installs and opens it again, without touching the data
+  folder. Nothing is downloaded until you click. **Skip this version** hides a release.
+* Only a copy set up by the installer can install itself; a portable copy gets a link to the release page.
+* The check can be switched off in the About window (or `CT_UPDATE_CHECK=false`). It is the only connection the
+  program makes to the internet by itself.
+* New routes: `GET /api/update`, `POST /api/update/check`, `/install`, `/skip`, `/enabled`. New start option:
+  `--reconnect` (what an update starts the new version with, so the open window is kept).
 
+**Website**
+* The GitHub Pages site was rewritten: plain text, real screenshots, no stock template, and no outside requests.
+
+**Support**
 * The project can be supported on Ko-fi: the link is in the *About & support* window, on the last page of the
   welcome tour, in the README and behind the repository's **Sponsor** button.
 
