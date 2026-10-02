@@ -949,11 +949,3 @@ the WebSocket end to end on the mock broker, and the real feed, reading and trad
 the price keeps moving while an order or a slow chart read waits for the terminal, and
 that a feed starved by a busy terminal is called slow, not dead.
 
-## Roadmap
-
-- [x] Phase 1 — Scaffold, broker abstraction, symbol sync, live chart
-- [x] Phase 2 — Replay mode, on-chart trading, drag-drop SL/TP
-- [x] Phase 3 — Python indicator engine (sandbox) + manager UI
-- [ ] Phase 4 — Backtesting engine + UI
-- [ ] Phase 5 — MCP server, AI indicator injection, smart snapshots
-- [ ] Phase 6 — Visual AI optimization loop + polish
