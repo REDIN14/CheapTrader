@@ -1,0 +1,101 @@
+# Builds the Windows program when a version tag is pushed (git tag v0.1.0 && git push --tags), and puts it
+# on the Releases page: a portable zip, an installer, and the SHA-256 checksums.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build for Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path backend/app/__init__.py -Pattern '__version__ = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "The tag $env:GITHUB_REF_NAME does not match the version $version in backend/app/__init__.py"
+          }
+          "number=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Install the page's libraries
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install the program's libraries
+        working-directory: backend
+        run: uv sync --extra mt5 --extra build
+
+      - name: Build CheapTrader.exe
+        working-directory: backend
+        run: uv run python scripts/build_exe.py --onefile --public --out ../dist-release
+
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.number }}"
+          $stage = "dist-release/CheapTrader-$version"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item dist-release/CheapTrader.exe, dist-release/.env, LICENSE, NOTICE $stage
+          Copy-Item docs/GETTING_STARTED.md "$stage/README.md"
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist-release/CheapTrader-$version-win64.zip" -Force
+
+      # The installer is a bonus: if Inno Setup is not to be had, the release still has the zip.
+      - name: Installer
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DAppVersion=${{ steps.version.outputs.number }}" installer/CheapTrader.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Set-Location dist-release
+          Get-ChildItem *.zip, *-setup.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          } | Set-Content -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist-release/CheapTrader-*-win64.zip
+            dist-release/CheapTrader-*-setup.exe
+            dist-release/SHA256SUMS.txt
+
+      - name: Keep the files (a manual run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: CheapTrader-windows
+          path: |
+            dist-release/CheapTrader-*-win64.zip
+            dist-release/CheapTrader-*-setup.exe
+            dist-release/SHA256SUMS.txt

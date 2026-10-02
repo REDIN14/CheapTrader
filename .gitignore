@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.pytest_tmp/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+*.local
+*.tsbuildinfo
+frontend/tests/.build/
+
+# Settings and secrets (backend/.env holds the MetaTrader login; backend/.env.example is the template)
+.env
+
+# The program's own data: the bar history of your broker, your drawings and indicators, logs
+backend/data/
+data/
+*.db
+*.db-shm
+*.db-wal
+*.db.bak*
+logs/
+
+# Built program (scripts/build_exe.py) and release files
+release/
+dist-release/
+backend/build/
+
+# Editor / OS
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db

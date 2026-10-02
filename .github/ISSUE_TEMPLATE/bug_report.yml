@@ -1,0 +1,46 @@
+name: Bug report
+description: Something does not work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time. **Never post your MetaTrader login or password.**
+        Account numbers in screenshots are best covered up.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead? Screenshots help.
+    validations:
+      required: true
+  - type: dropdown
+    id: market
+    attributes:
+      label: Which market was it on?
+      options:
+        - MetaTrader 5 (live)
+        - Synthetic data (no MetaTrader connected)
+        - Replay (paper account)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CheapTrader version
+      description: About and support (the ? button at the right edge) shows it.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Windows version and MetaTrader 5 build
+      placeholder: "Windows 11 23H2, MetaTrader 5 build 5000"
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: The last lines of data\logs\cheaptrader.log (next to CheapTrader.exe), if there is an error. Remove anything private.
+      render: text

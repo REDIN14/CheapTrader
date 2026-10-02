@@ -1,0 +1,17 @@
+# Which sponsor and donation pages show up in the "Sponsor" button of this repository.
+#
+# 1. Fill in the ones you have set up, and delete the "#" in front of the line.
+#    (GitHub checks this file: an entry that does not exist makes the button disappear.)
+# 2. Put the same addresses into frontend/src/lib/project.ts, so that the app's About window
+#    and the welcome tour show them too.
+#
+# GitHub Sponsors has to be set up and approved first: https://github.com/sponsors
+# Ko-fi, Liberapay and the others only need an account on their own site.
+
+# github: your-github-name
+# ko_fi: your-ko-fi-name
+# liberapay: your-liberapay-name
+# buy_me_a_coffee: your-name
+# patreon: your-name
+# open_collective: your-project
+# custom: ["https://www.paypal.com/donate/?hosted_button_id=XXXX"]

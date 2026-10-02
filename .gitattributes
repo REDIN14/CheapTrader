@@ -1,0 +1,8 @@
+# One line-ending style in the repository (LF); Windows tools cope with it.
+* text=auto eol=lf
+
+# Never touch binary files.
+*.png binary
+*.ico binary
+*.exe binary
+*.db binary
