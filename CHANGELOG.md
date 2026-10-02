@@ -2,6 +2,19 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## 0.1.2 — a hidden MetaTrader terminal closes with the program
+
+* When the MetaTrader window is hidden (the *Hide the MetaTrader window* switch in the MetaTrader panel) and
+  CheapTrader is closed, the terminal is now closed with it. Before, it stayed running with no window and no taskbar
+  button, and had to be ended in Task Manager.
+* Only a terminal that the program was told to hide is closed. One whose window is on the screen, minimised or not,
+  is left as it is.
+* The terminal is asked to close the way its own close button asks, and is never forced. If it is still there after
+  ten seconds (a dialog may be waiting for an answer in the hidden window), its window is shown again so that you can
+  answer it, and the terminal keeps running.
+* Anything else running in that terminal, such as an Expert Advisor, stops with it. Show the window before closing
+  CheapTrader to keep the terminal open. The switch's text in the MetaTrader panel says so.
+
 ## 0.1.1 — profiles, updates, a new site, support links
 
 The 0.1.1 installer was rebuilt on 2 October 2026 so that it includes everything below (the first build of 0.1.1 had only the support links).

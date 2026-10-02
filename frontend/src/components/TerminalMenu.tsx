@@ -128,7 +128,7 @@ export function TerminalMenu() {
                 Hide the MetaTrader window
                 <small>
                   {win.found
-                    ? "The terminal keeps running in the background and the app keeps working. Remembered next time."
+                    ? "The terminal keeps running in the background and the app keeps working. It closes when CheapTrader closes; show the window first to keep it open. Remembered next time."
                     : "No terminal window found yet (it may still be starting). The choice is remembered."}
                 </small>
               </span>

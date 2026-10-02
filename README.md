@@ -887,7 +887,13 @@ something stops the terminal taking the app's orders) opens one panel:
   switch shows it again. The choice is remembered in `preferences.json` in the data folder and
   applied at every start, also to a window that appears a little later (the terminal was
   started after the app). A window you bring back by hand is left alone until you flip the
-  switch.
+  switch. **A hidden terminal is closed when CheapTrader closes**, so it does not stay in the
+  background with no window and no taskbar button to find: it is asked to close the way its own
+  close button asks, and if it is still there after ten seconds (a dialog may be waiting for an
+  answer) its window is shown again and it is left running. A terminal whose window is on the
+  screen is never closed by the app. Anything else running in the terminal, such as an Expert
+  Advisor, stops with it: show the window before closing CheapTrader to keep the terminal open.
+  The next time CheapTrader starts it opens the terminal again, and hides it again.
 - **Algo trading.** The app trades through MetaTrader's Python interface, and the terminal only
   accepts such orders while its **Algo Trading** switch is on. The panel shows whether it is,
   and lists anything else that stops orders. What to switch on in MetaTrader:

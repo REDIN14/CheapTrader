@@ -158,6 +158,11 @@ class AppState:
         if self.hub is not None:
             self.hub.stop()
         self.broker.disconnect()
+        try:
+            # a terminal that was hidden for the user closes with the app: it would run on out of sight otherwise
+            self.terminal_window.close_hidden()
+        except Exception:  # noqa: BLE001 - the app is closing either way
+            logger.warning("could not close the hidden MetaTrader terminal", exc_info=True)
 
 
 _state: AppState | None = None

@@ -167,7 +167,7 @@
       <li>Intervals from 1 minute to 1 month: 1, 5, 15 and 30 minutes, 1 and 4 hours, day, week, month.</li>
       <li>History is fetched once and kept in a local database, so reopening a chart does not download it again.</li>
       <li>The layout, the symbol, the interval and your drawings are remembered.</li>
-      <li>The MetaTrader window can be hidden from the program’s menu.</li>
+      <li>The MetaTrader window can be hidden from the program’s menu. A hidden terminal closes when the program does.</li>
       <li>The program tells you when a newer release is on GitHub and can install it for you.</li>
     </ul>
   </div>
@@ -224,6 +224,13 @@
   <h2 id="changes-h">Recent changes</h2>
   <div class="body">
     <dl class="log">
+      <dt>0.1.2 <time datetime="2026-10-02">2 October 2026</time></dt>
+      <dd>
+        <ul>
+          <li>When the MetaTrader window is hidden and you close the program, the terminal now closes with it. Before, it kept running with no window and no taskbar button, and had to be ended in Task Manager.</li>
+          <li>A terminal whose window is on the screen is never closed by the program, and one that does not close within ten seconds is shown again instead of being forced.</li>
+        </ul>
+      </dd>
       <dt>0.1.1 <time datetime="2026-10-02">2 October 2026</time></dt>
       <dd>
         <ul>

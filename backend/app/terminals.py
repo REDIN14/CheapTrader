@@ -3,7 +3,8 @@
 * which are installed (one per broker, each broker ships its own: ``C:\\Program Files\\Fusion Markets
   MetaTrader 5``, ``...\\IC Markets MetaTrader 5``) and which are running;
 * which one the app should talk to when the settings do not say (``choose``);
-* showing and hiding the terminal's window, and keeping it hidden if the user wants that.
+* showing and hiding the terminal's window, keeping it hidden if the user wants that, and closing a
+  hidden terminal together with the app (it would otherwise run on, out of sight).
 
 Everything that touches Windows goes through ``Win32`` (ctypes only, no extra package), so the
 rest can be tested with a stand-in.
@@ -17,6 +18,7 @@ import logging
 import os
 import re
 import threading
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
@@ -27,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 EXE = "terminal64.exe"
 WINDOW_CLASS = "MetaQuotes::MetaTrader"  # the main window's class: "MetaQuotes::MetaTrader::5.00"
+#: How long a terminal that was asked to close is given before it is shown again (see TerminalWindow.close_hidden).
+CLOSE_WAIT = 10.0
 
 
 @dataclass(frozen=True)
@@ -48,7 +52,11 @@ class Windows(Protocol):
 
     def show(self, hwnd: int) -> None: ...
 
+    def close(self, hwnd: int) -> None:
+        """Ask the window to close, as its own close button does (the program may still say no)."""
 
+
+# the Windows-only part: everything above is plain Python and is tested with a stand-in
 class Win32:
     """The Windows calls, by ctypes. Does nothing (and finds nothing) elsewhere."""
 
@@ -73,6 +81,8 @@ class Win32:
             self._u32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
             self._u32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
             self._u32.EnumWindows.argtypes = [ctypes.c_void_p, wintypes.LPARAM]
+            self._u32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+            self._u32.PostMessageW.restype = wintypes.BOOL
 
     def processes(self, image: str) -> list[tuple[int, str]]:
         if not self._ok:
@@ -147,6 +157,10 @@ class Win32:
             self._u32.ShowWindow(hwnd, 9 if self._u32.IsIconic(hwnd) else 5)
             self._u32.ShowWindow(hwnd, 5)  # SW_SHOW (a hidden window that was minimised is still iconic until now)
             self._u32.SetForegroundWindow(hwnd)
+
+    def close(self, hwnd: int) -> None:
+        if self._ok:
+            self._u32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE: the same as the window's close button
 
 
 # -- which terminals there are ------------------------------------------------------------------
@@ -287,6 +301,9 @@ class TerminalWindow:
     button) off the screen. The choice is remembered in ``preferences.json``. A window that
     appears later (the terminal was started a moment after the app, or restarted) is hidden
     too, once; one the user brings back by hand is left alone.
+
+    A hidden terminal has no window to close and no taskbar button to find, so when the app
+    ends it is closed with it (``close_hidden``); one whose window is showing is left running.
     """
 
     def __init__(self, win: Windows | None = None, prefs: Preferences | None = None, interval: float = 2.0) -> None:
@@ -350,6 +367,43 @@ class TerminalWindow:
 
     def stop(self) -> None:
         self._stop.set()
+
+    def _running(self) -> bool:
+        return any(_same(path, self._exe or "") for _pid, path in self._win.processes(EXE))
+
+    def close_hidden(self, wait: float = CLOSE_WAIT, *, clock=time.monotonic, sleep=time.sleep) -> str:
+        """The app is ending: close the terminal it is connected to if its window is hidden.
+
+        Only a terminal the user has had hidden (the preference is on and no window of it shows) is
+        touched; one that is open on the screen, minimised or not, is the user's and stays. The terminal
+        is asked to close the way its own close button does and given ``wait`` seconds. If it is still
+        there then (a dialog may be waiting for an answer in a window nobody can see) its window is shown
+        again so that the user can deal with it. Nothing is ever killed. Returns what happened:
+        ``"closed"``, ``"shown"`` (it did not close), or why nothing was done.
+        """
+        if not self._exe:
+            return "no terminal is connected"
+        if not self._prefs.get("hide_terminal"):
+            return "not hidden by the user"
+        windows = self._windows()
+        if not windows:
+            return "no terminal window"
+        if any(w.visible for w in windows):
+            return "the window is showing"
+        for w in windows:
+            self._win.close(w.hwnd)
+        deadline = clock() + wait
+        while True:
+            if not self._running():
+                logger.info("closed the hidden MetaTrader terminal together with the app")
+                return "closed"
+            if clock() >= deadline:
+                break
+            sleep(0.25)
+        for w in self._windows():
+            self._win.show(w.hwnd)
+        logger.warning("the hidden MetaTrader terminal did not close; its window is shown again")
+        return "shown"
 
     def _run(self) -> None:
         while not self._stop.wait(self._interval):

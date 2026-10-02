@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import desktop
+from app.config import Settings
 from app.data.store import store_path_for_broker
 from app.preferences import Preferences
-from app.terminals import Terminal, TerminalWindow, Window, broker_of, choose, detect, installed
+from app.state import AppState
+from app.terminals import Terminal, TerminalWindow, Win32, Window, broker_of, choose, detect, installed
 
 
 # -- names -------------------------------------------------------------------------------------
@@ -38,6 +43,7 @@ class FakeWindows:
         self.running = running or {}
         self.windows = windows or {}
         self.log: list[tuple[str, int]] = []
+        self.refuses = False  # a terminal that does not close when asked (a dialog is waiting for an answer)
 
     def processes(self, image: str) -> list[tuple[int, str]]:
         return list(self.running.items())
@@ -56,6 +62,15 @@ class FakeWindows:
     def show(self, hwnd: int) -> None:
         self.log.append(("show", hwnd))
         self._set(hwnd, visible=True, minimized=False)
+
+    def close(self, hwnd: int) -> None:
+        self.log.append(("close", hwnd))
+        if self.refuses:
+            return
+        for pid, ws in list(self.windows.items()):
+            if any(w.hwnd == hwnd for w in ws):  # the terminal ends: its windows and its process are gone
+                del self.windows[pid]
+                self.running.pop(pid, None)
 
 
 def make_terminal(root: Path, folder: str, data_hash: str | None = None, appdata: Path | None = None) -> str:
@@ -186,6 +201,323 @@ def test_without_a_window_the_choice_is_still_remembered(prefs) -> None:
     assert keeper.state() == {"found": False, "hidden": None, "minimized": False}
     keeper.set_hidden(True)
     assert prefs.get("hide_terminal") is True
+
+
+# -- the app ends: a hidden terminal ends with it --------------------------------------------------------------
+def hidden_terminal(prefs: Preferences, *, wanted: bool = True, **world):
+    """A connected terminal whose window the user had the app hide."""
+    exe, win = window_world(visible=False, **world)
+    prefs.set("hide_terminal", wanted)
+    keeper = TerminalWindow(win, prefs)
+    keeper.use(exe)
+    return keeper, win
+
+
+def no_wait(_seconds: float) -> None:
+    """Instead of sleeping: the tests that close a terminal never wait for real."""
+
+
+def test_a_hidden_terminal_is_closed_with_the_app(prefs) -> None:
+    exe, win = window_world()
+    keeper = TerminalWindow(win, prefs)
+    keeper.use(exe)
+    keeper.set_hidden(True)  # the user's switch
+    assert keeper.close_hidden(sleep=no_wait) == "closed"
+    assert win.log == [("hide", 1000), ("close", 1000)]  # it was asked, the way its own close button asks
+    assert win.running == {}  # and it is gone, not left running out of sight
+    assert prefs.get("hide_terminal") is True  # the choice stays for the next start
+
+
+def test_a_terminal_that_is_showing_is_left_running(prefs) -> None:
+    exe, win = window_world(visible=True)
+    prefs.set("hide_terminal", True)  # the user wants it hidden but has it on the screen now
+    keeper = TerminalWindow(win, prefs)
+    keeper.use(exe)
+    assert keeper.close_hidden(sleep=no_wait) == "the window is showing"
+    assert win.log == [] and win.running  # asked nothing, closed nothing
+
+
+def test_a_minimised_terminal_is_on_the_screen_and_stays(prefs) -> None:
+    exe, win = window_world(visible=True, minimized=True)  # it has a taskbar button: the user can find it
+    prefs.set("hide_terminal", True)
+    keeper = TerminalWindow(win, prefs)
+    keeper.use(exe)
+    assert keeper.close_hidden(sleep=no_wait) == "the window is showing"
+    assert win.log == []
+
+
+def test_a_terminal_the_user_did_not_have_hidden_is_not_closed(prefs) -> None:
+    """Hidden by something else, or the switch is off: it is not the app's to close."""
+    keeper, win = hidden_terminal(prefs, wanted=False)
+    assert keeper.close_hidden(sleep=no_wait) == "not hidden by the user"
+    assert win.log == [] and win.running
+
+
+def test_nothing_is_closed_before_a_terminal_is_chosen(prefs) -> None:
+    exe, win = window_world(visible=False)
+    prefs.set("hide_terminal", True)
+    keeper = TerminalWindow(win, prefs)  # the mock broker: no terminal was ever connected
+    assert keeper.close_hidden(sleep=no_wait) == "no terminal is connected"
+    assert win.log == [] and win.running
+
+
+def test_a_terminal_without_a_window_is_not_asked_anything(prefs) -> None:
+    keeper, win = hidden_terminal(prefs)
+    win.windows.clear()  # still starting, or its window has not appeared
+    assert keeper.close_hidden(sleep=no_wait) == "no terminal window"
+    assert win.log == [] and win.running
+
+
+def test_only_the_connected_terminal_is_closed(prefs) -> None:
+    keeper, win = hidden_terminal(prefs)
+    win.running[8] = "D:\\Other MetaTrader 5\\terminal64.exe"  # the user's other broker, hidden or not
+    win.windows[8] = [Window(3000, "other", False, False)]
+    assert keeper.close_hidden(sleep=no_wait) == "closed"
+    assert win.log == [("close", 1000)]
+    assert list(win.running) == [8]
+
+
+def test_a_terminal_with_one_window_showing_is_not_closed_at_all(prefs) -> None:
+    keeper, win = hidden_terminal(prefs)
+    win.windows[7].append(Window(2000, "a second window", True, False))
+    assert keeper.close_hidden(sleep=no_wait) == "the window is showing"
+    assert win.log == [] and win.running
+
+
+def test_every_window_of_a_hidden_terminal_is_asked_to_close(prefs) -> None:
+    keeper, win = hidden_terminal(prefs)
+    win.windows[7].append(Window(2000, "a second window", False, False))
+    assert keeper.close_hidden(sleep=no_wait) == "closed"
+    assert win.log == [("close", 1000), ("close", 2000)]
+
+
+def test_a_terminal_that_takes_a_moment_to_close_is_waited_for(prefs) -> None:
+    keeper, win = hidden_terminal(prefs)
+    win.refuses = True  # nothing happens at once: the terminal is saving its charts
+    ticks: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        ticks.append(seconds)
+        if len(ticks) == 3:
+            win.running.clear()  # and then it is done
+
+    assert keeper.close_hidden(wait=10, clock=lambda: 0.25 * len(ticks), sleep=sleep) == "closed"
+    assert ("show", 1000) not in win.log  # it was not brought back while it was still closing
+
+
+def test_a_terminal_that_will_not_close_is_shown_again_and_never_killed(prefs, caplog) -> None:
+    keeper, win = hidden_terminal(prefs)
+    win.refuses = True  # a dialog is waiting for an answer in a window nobody can see
+    now = [0.0]
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    with caplog.at_level(logging.WARNING, logger="app.terminals"):
+        assert keeper.close_hidden(wait=5, clock=lambda: now[0], sleep=sleep) == "shown"
+    assert win.log == [("close", 1000), ("show", 1000)]  # so the user can answer it
+    assert win.running == {7: "C:\\Program Files\\Fusion Markets MetaTrader 5\\terminal64.exe"}  # still there: nothing was killed
+    assert 5 <= now[0] < 6  # it waited what it was given, no longer
+    assert "did not close" in caplog.text
+
+
+# -- AppState.shutdown ----------------------------------------------------------------------------------------
+class RecordingWindow:
+    def __init__(self, order: list[str], fail: bool = False) -> None:
+        self.order, self.fail = order, fail
+
+    def stop(self) -> None:
+        self.order.append("window keeper stopped")
+
+    def close_hidden(self) -> str:
+        self.order.append("terminal closed")
+        if self.fail:
+            raise RuntimeError("the window list could not be read")
+        return "closed"
+
+
+def started_state(monkeypatch: pytest.MonkeyPatch, window: RecordingWindow, order: list[str]) -> AppState:
+    state = AppState(Settings(broker="mock"))
+    state.startup()
+    disconnect = state.broker.disconnect
+
+    def disconnected() -> None:
+        order.append("broker let go")
+        disconnect()
+
+    monkeypatch.setattr(state.broker, "disconnect", disconnected)
+    state.terminal_window = window
+    return state
+
+
+def test_the_terminal_is_closed_after_the_app_has_let_go_of_it(monkeypatch) -> None:
+    order: list[str] = []
+    state = started_state(monkeypatch, RecordingWindow(order), order)
+    state.shutdown()
+    assert order == ["window keeper stopped", "broker let go", "terminal closed"]  # not while it is still being read from
+
+
+def test_a_terminal_that_cannot_be_closed_does_not_stop_the_app_from_closing(monkeypatch, caplog) -> None:
+    order: list[str] = []
+    state = started_state(monkeypatch, RecordingWindow(order, fail=True), order)
+    with caplog.at_level(logging.WARNING, logger="app.state"):
+        state.shutdown()  # no exception
+    assert order[-1] == "terminal closed"
+    assert "could not close the hidden MetaTrader terminal" in caplog.text
+
+
+# -- a real window (a stand-in program, never the user's own terminal) -------------------------------------------
+CSC = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe"
+
+STAND_IN = """
+using System;
+using System.Runtime.InteropServices;
+
+// Stands in for a MetaTrader terminal: a program called terminal64.exe with one top-level window of the
+// terminal's window class. It closes when asked to (WM_CLOSE) unless it is started with "refuse".
+class StandIn {
+  delegate IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  struct WNDCLASS {
+    public uint style;
+    public WndProc lpfnWndProc;
+    public int cbClsExtra;
+    public int cbWndExtra;
+    public IntPtr hInstance;
+    public IntPtr hIcon;
+    public IntPtr hCursor;
+    public IntPtr hbrBackground;
+    public string lpszMenuName;
+    public string lpszClassName;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  struct MSG {
+    public IntPtr hwnd;
+    public uint message;
+    public IntPtr wParam;
+    public IntPtr lParam;
+    public uint time;
+    public int x;
+    public int y;
+  }
+
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern ushort RegisterClassW(ref WNDCLASS c);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateWindowExW(uint exStyle, string cls, string title, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int cmd);
+  [DllImport("user32.dll")] static extern int GetMessageW(out MSG msg, IntPtr hwnd, uint min, uint max);
+  [DllImport("user32.dll")] static extern bool TranslateMessage(ref MSG msg);
+  [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref MSG msg);
+  [DllImport("user32.dll")] static extern IntPtr DefWindowProcW(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] static extern void PostQuitMessage(int code);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
+
+  static bool refuse;
+  static WndProc proc;  // kept: the window class refers to it for as long as the program runs
+
+  static IntPtr OnMessage(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam) {
+    if (msg == 0x0010 && refuse) return IntPtr.Zero;                // WM_CLOSE, ignored as when a dialog waits for an answer
+    if (msg == 0x0002) { PostQuitMessage(0); return IntPtr.Zero; }  // WM_DESTROY: the window is gone, so is the program
+    return DefWindowProcW(hwnd, msg, wParam, lParam);               // the default for WM_CLOSE destroys the window
+  }
+
+  static int Main(string[] args) {
+    refuse = args.Length > 0 && args[0] == "refuse";
+    proc = OnMessage;
+    WNDCLASS cls = new WNDCLASS();
+    cls.lpfnWndProc = proc;
+    cls.hInstance = GetModuleHandleW(null);
+    cls.lpszClassName = "MetaQuotes::MetaTrader::5.00";
+    if (RegisterClassW(ref cls) == 0) return 2;
+    IntPtr hwnd = CreateWindowExW(0, cls.lpszClassName, "12345678 - Stand-in", 0x00CF0000, 100, 100, 400, 300, IntPtr.Zero, IntPtr.Zero, cls.hInstance, IntPtr.Zero);
+    if (hwnd == IntPtr.Zero) return 3;
+    ShowWindow(hwnd, 4);  // SW_SHOWNOACTIVATE: it must not take the keyboard from whoever is working while the tests run
+    MSG msg;
+    while (GetMessageW(out msg, IntPtr.Zero, 0, 0) > 0) { TranslateMessage(ref msg); DispatchMessageW(ref msg); }
+    return 0;
+  }
+}
+"""
+
+
+@pytest.fixture(scope="module")
+def stand_in_terminal(tmp_path_factory) -> Path:
+    """A program named terminal64.exe, in a folder of its own, with a window of the terminal's class."""
+    if os.name != "nt" or not CSC.exists():
+        pytest.skip("needs Windows and its C# compiler")
+    folder = tmp_path_factory.mktemp("Stand-in MetaTrader 5")
+    (folder / "stand_in.cs").write_text(STAND_IN, encoding="utf-8")
+    exe = folder / "terminal64.exe"
+    built = subprocess.run(
+        [str(CSC), "/nologo", "/target:winexe", f"/out:{exe}", str(folder / "stand_in.cs")], capture_output=True, text=True, timeout=120
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    return exe
+
+
+def open_stand_in(exe: Path, *args: str) -> tuple[subprocess.Popen, Win32]:
+    """Run the stand-in and wait until its window is on the screen."""
+    process = subprocess.Popen([str(exe), *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    win = Win32()
+    try:
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                pytest.fail(f"the stand-in terminal ended at once (exit code {process.returncode})")
+            if any(w.visible for w in win.main_windows(process.pid)):
+                return process, win
+            time.sleep(0.1)
+        pytest.fail("the stand-in terminal never showed its window")
+    except BaseException:
+        process.kill()
+        raise
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows windows")
+def test_a_real_hidden_window_is_closed_with_the_app(stand_in_terminal, prefs) -> None:
+    process, win = open_stand_in(stand_in_terminal)
+    try:
+        keeper = TerminalWindow(win, prefs)
+        keeper.use(str(stand_in_terminal))
+        assert keeper.set_hidden(True)["hidden"] is True  # taken off the screen, the program runs on
+        time.sleep(0.5)
+        assert process.poll() is None
+        assert keeper.close_hidden(wait=15) == "closed"
+        assert process.wait(timeout=15) == 0  # it left the way a program does when its window is closed
+    finally:
+        if process.poll() is None:
+            process.kill()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows windows")
+def test_a_real_window_that_stays_open_is_shown_again_and_the_program_is_not_killed(stand_in_terminal, prefs) -> None:
+    process, win = open_stand_in(stand_in_terminal, "refuse")
+    try:
+        keeper = TerminalWindow(win, prefs)
+        keeper.use(str(stand_in_terminal))
+        keeper.set_hidden(True)
+        assert keeper.close_hidden(wait=1.5) == "shown"
+        assert process.poll() is None  # still running: it was asked, not forced
+        assert keeper.state()["hidden"] is False  # and its window is back for the user to deal with
+    finally:
+        process.kill()
+        process.wait(timeout=15)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows windows")
+def test_a_real_window_on_the_screen_is_left_alone(stand_in_terminal, prefs) -> None:
+    process, win = open_stand_in(stand_in_terminal)
+    try:
+        prefs.set("hide_terminal", True)
+        keeper = TerminalWindow(win, prefs)
+        keeper.use(str(stand_in_terminal))
+        assert keeper.close_hidden(wait=1) == "the window is showing"
+        time.sleep(0.5)
+        assert process.poll() is None
+    finally:
+        process.kill()
+        process.wait(timeout=15)
 
 
 # -- one bar store per broker ---------------------------------------------------------------------------
