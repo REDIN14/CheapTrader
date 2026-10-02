@@ -84,7 +84,7 @@ More: **[Getting started](docs/GETTING_STARTED.md)** (including what to do when 
 ## Support the project
 
 CheapTrader is free and made in spare time. If it is useful to you, a ⭐ on this page, a bug report, an idea or a
-pull request (see [CONTRIBUTING.md](CONTRIBUTING.md)) helps most. If you would like to chip in as well, you can
+pull request helps most. If you would like to chip in as well, you can
 **[support the project on Ko-fi](https://ko-fi.com/redin010)**. The same link is behind the **Sponsor** button of
 this repository and under *About & support* in the app. Thank you!
 
