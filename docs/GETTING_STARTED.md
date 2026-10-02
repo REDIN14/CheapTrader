@@ -107,6 +107,13 @@ when something stops the terminal from taking orders.
 start from, then play, pause or step (`Space`, `Right arrow`). Buy and sell with stop loss and take profit;
 the report shows the equity curve and statistics. Nothing reaches your broker.
 
+The paper account is a **profile**: it has a starting balance you choose (10,000 unless you say otherwise) and
+it keeps its balance and every trade for good. Nothing is reset when a replay ends or when you close the
+program. The menu beside the *Replay* tag (in the side panel, and at the end of the start bar) lets you make
+more profiles, for instance one per strategy, switch between them, rename them, start one over with a new
+balance, and delete the ones you no longer need. Positions still open when a replay ends are closed at the last
+price, so the result is not lost.
+
 ---
 
 ## 7. When something does not work

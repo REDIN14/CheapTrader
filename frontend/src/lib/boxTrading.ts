@@ -56,7 +56,7 @@ export function marketOf(trading: BoxTrading): Market | null {
 export function viewOf(d: Drawing, trading: BoxTrading): BoxView | null {
   const plan = planOf(d);
   if (!plan) return null;
-  const spec = trading.symbol ? specOf(trading.symbol, trading.paper) : null;
+  const spec = trading.symbol ? specOf(trading.symbol) : null;
   const size = spec ? sizeOf(d, plan, spec, trading.balance ?? 0) : null;
   const market = marketOf(trading);
   const volume = size?.ok ? size.lots : 0;

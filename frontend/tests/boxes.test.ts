@@ -87,10 +87,10 @@ test("a box is sized from the balance, 1% by default, and its orders are worked 
   assert.equal(view.wait!.problem, null);
 });
 
-test("a replay trades the paper account: no waiting order, and the plain arithmetic for the size", () => {
+test("a replay trades the paper account: no waiting order, and the size follows what the paper account pays", () => {
   const view = viewOf(long, trading({ paper: true, symbol: { ...eurusd, trade_tick_value: 0.5 } as Symbol }))!;
   assert.equal(view.wait, null);
-  assert.equal(view.size!.lots, 0.5, "the broker's tick value is not used in a replay");
+  assert.equal(view.size!.lots, 1, "100 USD over a stop 20 pips away, a lot paying 100 USD for it: the tick value counts in a replay too");
 });
 
 test("without the instrument's details the box cannot be traded, and says so", () => {

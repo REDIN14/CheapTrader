@@ -41,6 +41,12 @@ class ReplayEngine:
     speed: float = 1.0
     playing: bool = False
     contract_size: float = 100_000.0
+    #: What one price step of the instrument is worth for one lot, in the account's currency
+    #: (0: not known; the profit is then worked out from the contract size).
+    tick_size: float = 0.0
+    tick_value: float = 0.0
+    #: The paper account trading along. Left out, the replay makes one that lasts as long as it does;
+    #: the app hands in the profile the user chose, which outlives it (see profiles.py).
     paper: PaperTradingEngine | None = None
     _task: asyncio.Task | None = field(default=None, repr=False)
     _listeners: list = field(default_factory=list, repr=False)
@@ -48,11 +54,14 @@ class ReplayEngine:
     def __post_init__(self) -> None:
         if self.paper is None:
             self.paper = PaperTradingEngine(
-                symbol=self.symbol, contract_size=self.contract_size
+                symbol=self.symbol,
+                contract_size=self.contract_size,
+                tick_size=self.tick_size,
+                tick_value=self.tick_value,
             )
-        if self.bars:
-            # The equity curve starts on the bar the replay begins on.
-            self.paper.mark(self.bars[min(self.index, len(self.bars) - 1)])
+            if self.bars:
+                # The equity curve starts on the bar the replay begins on.
+                self.paper.mark(self.bars[min(self.index, len(self.bars) - 1)])
 
     # -- construction ------------------------------------------------------
     @classmethod
@@ -63,6 +72,9 @@ class ReplayEngine:
         timeframe: Timeframe,
         count: int = 2000,
         contract_size: float = 100_000.0,
+        tick_size: float = 0.0,
+        tick_value: float = 0.0,
+        paper: PaperTradingEngine | None = None,
     ) -> "ReplayEngine":
         bars = broker.get_bars(symbol, timeframe, count=count)
         return cls(
@@ -70,6 +82,9 @@ class ReplayEngine:
             timeframe=timeframe,
             bars=bars,
             contract_size=contract_size,
+            tick_size=tick_size,
+            tick_value=tick_value,
+            paper=paper,
         )
 
     @classmethod
@@ -79,6 +94,9 @@ class ReplayEngine:
         timeframe: Timeframe,
         bars: list[Bar],
         contract_size: float = 100_000.0,
+        tick_size: float = 0.0,
+        tick_value: float = 0.0,
+        paper: PaperTradingEngine | None = None,
     ) -> "ReplayEngine":
         """Build a replay engine from an already-resolved bar series."""
         return cls(
@@ -86,6 +104,9 @@ class ReplayEngine:
             timeframe=timeframe,
             bars=bars,
             contract_size=contract_size,
+            tick_size=tick_size,
+            tick_value=tick_value,
+            paper=paper,
         )
 
     # -- state -------------------------------------------------------------
@@ -117,12 +138,22 @@ class ReplayEngine:
         )
 
     # -- controls ----------------------------------------------------------
-    def begin(self, index: int = 0) -> ReplayState:
-        """Put the cursor on its first bar and start the paper account's equity curve there."""
+    def begin(self, index: int = 0, reason: str = "session") -> ReplayState:
+        """Put the cursor on a bar and start a session of the paper account there.
+
+        The account keeps its balance and its history. Positions still open are closed (at the price
+        they were last marked at) and the equity curve starts again from this bar.
+        """
         self.index = max(0, min(index, self.total - 1)) if self.bars else 0
         if self.paper is not None and self.bars:
-            self.paper.reset()
-            self.paper.mark(self.bars[self.index])
+            self.paper.begin_session(
+                self.bars[self.index],
+                symbol=self.symbol,
+                contract_size=self.contract_size,
+                tick_size=self.tick_size,
+                tick_value=self.tick_value,
+                reason=reason,
+            )
         return self.state()
 
     def seek(self, index: int) -> ReplayState:
@@ -130,8 +161,9 @@ class ReplayEngine:
 
         Moving forward is the same as stepping: every bar on the way is checked
         against the open positions' stops and targets, so jumping to the end gives
-        the result of having played it. Moving backward cannot undo trades, so it
-        starts the paper account again from the new position.
+        the result of having played it. Moving backward cannot undo trades, so the
+        positions still open are closed where they stand (the account keeps its balance
+        and history) and the equity curve starts again from the new position.
         """
         if not self.bars:
             return self.state()
@@ -139,9 +171,37 @@ class ReplayEngine:
         if target > self.index:
             self._play_bars(self.index + 1, target)
         elif target < self.index:
-            self.begin(target)
+            self.begin(target, reason="rewind")
         self.index = target
         return self.state()
+
+    def end(self, reason: str = "session") -> list[BacktestTrade]:
+        """The replay is over: stop playing and close what is still open at the price under the cursor."""
+        self.playing = False
+        return self._settle(reason)
+
+    def _settle(self, reason: str) -> list[BacktestTrade]:
+        if self.paper is None or not self.bars:
+            return []
+        return self.paper.settle_all(self.bars[min(self.index, self.total - 1)], reason)
+
+    def use_account(self, paper: PaperTradingEngine) -> None:
+        """Trade on another paper account from here on (the user chose another profile).
+
+        The one that was in use is settled where the cursor stands; the new one starts a session at it.
+        """
+        if paper is self.paper:
+            return
+        self._settle("session")
+        self.paper = paper
+        if self.bars:
+            paper.begin_session(
+                self.bars[min(self.index, self.total - 1)],
+                symbol=self.symbol,
+                contract_size=self.contract_size,
+                tick_size=self.tick_size,
+                tick_value=self.tick_value,
+            )
 
     def _play_bars(self, first: int, last: int) -> None:
         """Let the paper account see bars ``first`` … ``last`` (both included)."""
@@ -192,9 +252,10 @@ class ReplayEngine:
         return self.state()
 
     def reset(self) -> ReplayState:
-        """Back to the first bar with a fresh paper account."""
+        """Back to the first bar. The paper account keeps its balance and history (positions still
+        open are closed where they stand); to start the account itself over, reset the profile."""
         self.playing = False
-        return self.begin(0)
+        return self.begin(0, reason="rewind")
 
     # -- async playback ----------------------------------------------------
     def add_listener(self, callback) -> None:

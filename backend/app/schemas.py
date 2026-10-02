@@ -285,9 +285,12 @@ class BacktestTrade(BaseModel):
     exit_price: float
     volume: float
     pnl: float
+    # "sl", "tp", "manual" or, for a position closed when its replay ended or was rewound, "session" / "rewind".
     reason: str = ""
     # The paper position this trade closed (0 for backtests, which have none).
     ticket: int = 0
+    # The instrument: a paper profile's history spans every symbol it was used on.
+    symbol: str = ""
 
 
 class BacktestMetrics(BaseModel):
@@ -338,6 +341,50 @@ class ReplayAccount(BaseModel):
     # metrics' profit factor these tell "no losing trade yet" from "no trade at all".
     wins: int = 0
     losses: int = 0
+    # The profile this account is (see replay/profiles.py); empty for an account that is not kept.
+    profile_id: str = ""
+    profile_name: str = ""
+
+
+class ProfileSummary(BaseModel):
+    """One paper-trading profile, as listed."""
+
+    id: str
+    name: str
+    initial_balance: float
+    balance: float
+    # Balance minus what it began with, and as a percentage of it.
+    realized: float
+    return_pct: float
+    trades: int
+    wins: int
+    losses: int
+    open_positions: int
+    created_at: int
+    updated_at: int
+
+
+class ProfilesView(BaseModel):
+    """Every profile and which one the replay trades on."""
+
+    active: str
+    profiles: list[ProfileSummary]
+
+
+class NewProfile(BaseModel):
+    name: str
+    balance: float = 10_000.0
+    # Make it the one the replay trades on (the usual wish when making a profile).
+    activate: bool = True
+
+
+class RenameProfile(BaseModel):
+    name: str
+
+
+class ResetProfile(BaseModel):
+    # The balance to begin again with; left out, the profile begins again with the one it began with.
+    balance: float | None = None
 
 
 class ReplayUpdate(BaseModel):

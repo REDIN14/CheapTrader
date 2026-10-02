@@ -1,13 +1,13 @@
-// The Trade tab while a replay is running: the paper account at a glance, the
-// order ticket, the open positions and the latest closed trades. The full list
-// and the performance figures are in the report (see ReplayReport).
+// The Trade tab while a replay is running: the paper-trading profile in use, its account at a
+// glance, the order ticket, the open positions and the latest closed trades. The full list and
+// the performance figures are in the report (see ReplayReport).
 
-import { useEffect, useState } from "react";
+import { useState, type ReactNode } from "react";
 import { replayApi } from "../lib/api";
 import { formatLots, formatMoney, formatShortTime } from "../lib/format";
 import type { BacktestTrade, ReplayAccount } from "../lib/types";
 import { OrderTicket, type OrderForm } from "./OrderTicket";
-import { ReportIcon, ResetIcon } from "./Icons";
+import { ReportIcon } from "./Icons";
 
 interface Props {
   symbol: string | null;
@@ -20,9 +20,10 @@ interface Props {
   intraday: boolean;
   form: OrderForm;
   onFormChange: (form: OrderForm) => void;
+  /** The profile menu: which paper account this is, and making / deleting / starting over profiles. */
+  profileMenu: ReactNode;
   onRefresh: () => void;
   onClosePosition: (ticket: number) => void;
-  onReset: () => void;
   onOpenReport: () => void;
 }
 
@@ -31,7 +32,13 @@ const LISTED = 6;
 
 const tone = (v: number) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
 
-const REASON: Record<string, string> = { sl: "Stop", tp: "Target", manual: "Closed" };
+const REASON: Record<string, string> = {
+  sl: "Stop",
+  tp: "Target",
+  manual: "Closed",
+  session: "Replay ended",
+  rewind: "Rewound",
+};
 
 export function ReplayTradePanel({
   symbol,
@@ -42,20 +49,13 @@ export function ReplayTradePanel({
   intraday,
   form,
   onFormChange,
+  profileMenu,
   onRefresh,
   onClosePosition,
-  onReset,
   onOpenReport,
 }: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Clearing the account wipes the history, so it asks twice.
-  const [confirming, setConfirming] = useState(false);
-  useEffect(() => {
-    if (!confirming) return;
-    const id = window.setTimeout(() => setConfirming(false), 3500);
-    return () => window.clearTimeout(id);
-  }, [confirming]);
 
   const submit = async (side: "BUY" | "SELL") => {
     if (!symbol) return;
@@ -88,9 +88,12 @@ export function ReplayTradePanel({
 
   return (
     <div className="replay-trade">
-      <div className="rtp-banner">
-        <i />
-        Replay · paper account
+      <div className="rtp-profile">
+        <span className="rtp-tag">
+          <i />
+          Replay
+        </span>
+        {profileMenu}
       </div>
 
       {account && (
@@ -179,7 +182,9 @@ export function ReplayTradePanel({
           >
             <span className={t.side === "BUY" ? "side buy" : "side sell"}>{t.side}</span>
             <span className="position-main">
-              <b>{formatLots(t.volume)} lots</b>
+              <b>
+                {formatLots(t.volume)} lots{t.symbol ? ` ${t.symbol}` : ""}
+              </b>
               <small>
                 {t.entry_price.toFixed(digits)} → {t.exit_price.toFixed(digits)}
               </small>
@@ -197,22 +202,6 @@ export function ReplayTradePanel({
           </button>
         )}
       </div>
-
-      <button
-        className={confirming ? "rtp-reset confirm" : "rtp-reset"}
-        onClick={() => {
-          if (!confirming) {
-            setConfirming(true);
-            return;
-          }
-          setConfirming(false);
-          onReset();
-        }}
-        title="Close every position, clear the history and start the balance over"
-      >
-        <ResetIcon size={16} />
-        {confirming ? "Click again to reset" : "Reset paper account"}
-      </button>
     </div>
   );
 }

@@ -334,6 +334,23 @@ export const TrashIcon = ({ size = 22, ...rest }: IconProps) => (
   </Icon>
 );
 
+/** A pencil: rename. */
+export const PencilIcon = ({ size = 18, ...rest }: IconProps) => (
+  <Icon size={size} strokeWidth={1.4} {...rest}>
+    <path d="M8 20.5l.9-4.1 9.4-9.4a1.7 1.7 0 0 1 2.4 0l.8.8a1.7 1.7 0 0 1 0 2.4l-9.4 9.4L8 20.5z" />
+    <path d="M16.6 8.8l3.2 3.2" />
+  </Icon>
+);
+
+/** A wallet: the paper-trading account. */
+export const WalletIcon = ({ size = 18, ...rest }: IconProps) => (
+  <Icon size={size} strokeWidth={1.4} {...rest}>
+    <rect x="5.5" y="8.5" width="17" height="12" rx="2.4" />
+    <path d="M5.5 11.8h17" />
+    <circle cx="18.2" cy="15.8" r="1.1" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
 /** An open book: the documentation. */
 export const BookIcon = ({ size = 22, ...rest }: IconProps) => (
   <Icon size={size} strokeWidth={1.3} {...rest}>

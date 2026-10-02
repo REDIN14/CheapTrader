@@ -80,7 +80,7 @@ export function AccountStrip({
           title={reportOpen ? "Hide the performance report" : "Show the performance report"}
         >
           <i className="tv-strip-dot replay" />
-          Replay · paper account
+          Replay · {paper?.profile_name || "paper account"}
           {reportOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>
         {paper && m ? (

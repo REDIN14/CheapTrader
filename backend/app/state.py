@@ -15,6 +15,7 @@ from app.data.symbols import SymbolRegistry
 from app.indicators.registry import IndicatorRegistry
 from app.preferences import preferences
 from app.replay.engine import ReplayEngine
+from app.replay.profiles import ProfileStore
 from app.schemas import TerminalInfo
 from app.stream.factory import make_feed
 from app.stream.hub import MarketHub
@@ -44,12 +45,21 @@ class AppState:
         self.symbols = SymbolRegistry()
         self.indicators = IndicatorRegistry()
         self.replay: ReplayEngine | None = None
+        # The paper-trading profiles the replay trades on: they outlive a replay and a restart.
+        self.profiles = ProfileStore()
         # The live feed (ticks, positions, account); created once a broker is connected.
         self.hub: MarketHub | None = None
         # The MetaTrader window: shown or hidden as the user last chose.
         self.terminal_window = TerminalWindow()
         # One change of broker at a time (see connect_metatrader_now).
         self.switch_lock = asyncio.Lock()
+
+    def end_replay(self) -> None:
+        """The replay is over (the user left it, started another, or the program is stopping): the paper
+        account closes what is still open at the price under the cursor and keeps the result."""
+        engine, self.replay = self.replay, None
+        if engine is not None:
+            engine.end("session")
 
     def orders_allowed(self) -> bool:
         """May the app send orders to a real broker? Switched on in the settings (CT_ALLOW_LIVE_ORDERS)
@@ -121,8 +131,17 @@ class AppState:
             self.cache = DataCache(store=BarStore(wanted))
         self.symbols.sync(adapter)
         self.hub = MarketHub(make_feed(adapter, self.settings))
+        try:
+            # A replay that was cut off (the program was closed in the middle of it) left positions open.
+            self.profiles.settle_interrupted()
+        except Exception:  # noqa: BLE001 - the profiles are not worth stopping the app for
+            logger.warning("could not tidy the paper profiles", exc_info=True)
 
     def shutdown(self) -> None:
+        try:
+            self.end_replay()
+        except Exception:  # noqa: BLE001
+            logger.warning("could not settle the replay's paper account", exc_info=True)
         self.terminal_window.stop()
         if self.hub is not None:
             self.hub.stop()

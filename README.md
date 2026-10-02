@@ -39,7 +39,8 @@ position boxes that size the trade by risk. If you like it, a ⭐ on this page h
 * **Indicators in Python.** The usual ones are built in. Write your own as a small function
   (`compute(df, params)`), draw lines, panes and shapes, and run it in a sandbox.
 * **Bar replay.** Practise on history with a paper account: stop loss / take profit, trade markers, an equity
-  curve and statistics. Nothing reaches your broker.
+  curve and statistics. Nothing reaches your broker. Keep several paper-trading **profiles**, each with a
+  starting balance you choose; they keep their balance and history when a replay ends and when you restart.
 * **Starts without MetaTrader.** On a synthetic market you can look around. Once a terminal is open and logged in,
   the welcome tour (or one click on the chip at the bottom) connects to it, without a restart.
 * **Yours alone.** It runs on your PC and listens on `127.0.0.1` only. No account, no telemetry, nothing is
@@ -541,7 +542,7 @@ is remembered):
 
 | Control | Does |
 | --- | --- |
-| **Select bar** | choose another starting bar (the paper account starts over) |
+| **Select bar** | choose another starting bar (the profile keeps its balance and history) |
 | ▶ / ❚❚ (`Space`) | play / pause |
 | ⏭ step (`→`) | forward one bar |
 | **2x ▾** | speed in bars per second: 0.5, 1, 2, 5, 10, 25 or 50 (remembered) |
@@ -557,16 +558,42 @@ are clipped at the cursor so they cannot show the future.
 
 **The paper account.** Sell / Buy, the lot box, the ticket and the position tags
 work exactly as in live trading, including dragging stops and targets, and every
-order fills at the cursor bar's close. The balance starts at 10,000. The side panel
-shows equity, balance, open and closed P&L, the open positions and a trade history
-(**Reset paper account** asks twice). The strip under the chart follows it: balance,
-equity, open P&L, return, trades (wins / losses), win rate, max drawdown and profit
-factor — on a narrow window the last of these drop out whole rather than being cut
-in half. When a stop or target closes a position — also during **Jump to the last bar** — a
-message says which one and what it made. Entries are marked on the chart with an
-arrow and the lots, exits with a dot and the profit or loss.
+order fills at the cursor bar's close. The side panel shows equity, balance, open and
+closed P&L, the open positions and a trade history. The strip under the chart follows
+it: balance, equity, open P&L, return, trades (wins / losses), win rate, max drawdown
+and profit factor — on a narrow window the last of these drop out whole rather than
+being cut in half. When a stop or target closes a position — also during **Jump to the
+last bar** — a message says which one and what it made. Entries are marked on the chart
+with an arrow and the lots, exits with a dot and the profit or loss (only those of the
+symbol on the chart: a profile's history spans every symbol it was used on).
 
-**Report.** The strip's name ("Replay · paper account") or the **Report** link in
+**Profiles.** The paper account is a *profile*: a named account with a starting balance
+of your choice (10,000 unless you say otherwise) that keeps its balance and its whole
+trade history for good. Nothing is reset when a replay ends, when you start another
+one, or when the program is closed and opened again. The menu beside the **Replay** tag
+in the side panel — and at the end of the start bar, before a replay begins — lists
+them, each with its balance, return and trade count:
+
+* **New profile…** — a name and a starting balance. `10000`, `10,000` and `10.000,50`
+  are all understood; the balance can be 1 to 1,000,000,000 and a name up to 40
+  characters, different from every other profile's.
+* **Choose** one to trade on it. In a running replay the replay carries on with the
+  other account; positions still open on the one you leave are closed at the price
+  under the cursor, and the menu asks before it does that.
+* **Rename**, **start over** (erases the history; you choose the starting balance
+  again) and **delete** (asks first). Deleting the last profile leaves a fresh empty
+  one, because a replay always needs an account.
+
+A position still open when a replay ends — you leave the replay, pick another bar, or
+close the program — is closed at the last price it was marked at, and its trade says
+*Replay ended* instead of *closed by hand*. If the program was cut off in the middle
+of a replay, the next start settles the same way. Every profile is a file of its own
+(`replay\profiles\<id>.json` in the data folder), written whenever a trade opens or
+closes and, while a replay runs, every couple of seconds; a damaged file is set aside
+as `.corrupt` and the others carry on. Profit is calculated in the account's currency
+from the broker's tick value, so a yen pair no longer reads in yen.
+
+**Report.** The strip's name ("Replay · " and the profile's name) or the **Report** link in
 the side panel opens a drawer above the strip:
 
 * **Overview** — net profit, profit factor, win rate, trades (and win / loss
@@ -586,9 +613,10 @@ year-long window (36,000 bars) plays as smoothly as a short one. The statistics
 (drawdown, Sharpe, win/loss) are kept incrementally, so they cost the same on the
 first bar as on the last.
 
-Limits: paper P&L is in the instrument's quote currency and is not converted to the
-account's currency (so a JPY pair reads in yen terms); and a replay only starts
-inside the history loaded on the chart, as described above.
+Limits: paper P&L uses the tick size and tick value the broker reports for the symbol
+(a broker that reports none gets price × lots × contract size, in the instrument's quote
+currency); and a replay only starts inside the history loaded on the chart, as described
+above.
 
 Fixed along the way:
 
@@ -604,16 +632,21 @@ Fixed along the way:
   a click was ignored while the previous move was still on its way. Quick clicks
   and key presses are queued now, and so is **Jump to the last bar**.
 * **Jump to the last bar** teleported past stops and targets, and a second press of
-  play could start a second playback loop. Both are fixed; stepping back starts the
-  paper account again instead of leaving trades from the "future" on it.
+  play could start a second playback loop. Both are fixed; stepping back closes
+  what is open (the trade says *Rewound*) instead of leaving positions from the
+  "future" on the account.
 * A stop or target closing a position was silent, and the drawdown and win-rate
   figures were recomputed over the whole history on every poll.
 
 Backend (`/api/replay`): `POST /start` (symbol, timeframe, time → opens a window of
 1,500 bars before that bar and up to 60,000 after it), `POST /advance?delta=N`,
 `GET /account`, `GET /report`, plus `state`, `bars`, `orders`, `positions`, `trades`
-and `reset-account`. The older server-timed `play` / `pause` / `step` / `seek` /
-`speed` routes remain for API users.
+and `reset-account` (starts the profile in use over). `POST /stop` ends the replay: the
+open positions are settled and the profile saved. The profiles are `GET` and `POST`
+`/api/replay/profiles` (list, make), `PATCH` and `DELETE` `/api/replay/profiles/{id}`
+(rename, delete) and `POST` `/api/replay/profiles/{id}/select` and `…/reset` (choose,
+start over with an optional `{"balance": …}`); every reply is the whole list. The older
+server-timed `play` / `pause` / `step` / `seek` / `speed` routes remain for API users.
 
 ### Fixed in Refinement 4
 

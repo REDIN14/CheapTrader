@@ -143,12 +143,10 @@ const symbol = {
   volume_step: 0.01,
 };
 
-test("the broker's tick value is used live, and plain arithmetic in a replay", () => {
-  const live = specOf(symbol);
-  assert.equal(live.tickValue, 0.92);
-  assert.equal(live.max, 50);
-  const paper = specOf(symbol, true);
-  assert.ok(Math.abs(paper.tickValue - 1) < 1e-9, "100,000 x 0.00001: what the paper account pays");
+test("the broker's tick value is used, live and in a replay (the paper account pays by it too)", () => {
+  const spec = specOf(symbol);
+  assert.equal(spec.tickValue, 0.92);
+  assert.equal(spec.max, 50);
 });
 
 test("an instrument the broker has told nothing about falls back to its point and contract size", () => {

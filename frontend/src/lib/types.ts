@@ -226,10 +226,12 @@ export interface BacktestTrade {
   exit_price: number;
   volume: number;
   pnl: number;
-  /** "sl", "tp" or "manual". */
+  /** "sl", "tp", "manual", or "session" / "rewind" for a position closed when its replay ended or was rewound. */
   reason: string;
   /** The paper position this trade closed. */
   ticket: number;
+  /** The instrument: a profile's history spans every symbol it was used on. */
+  symbol: string;
 }
 
 /** The paper account as of the replay cursor. */
@@ -247,6 +249,32 @@ export interface ReplayAccount {
   /** Closed trades that made / lost money (the rest closed even). */
   wins: number;
   losses: number;
+  /** The profile this account is (see ReplayProfile); empty for an account that is not kept. */
+  profile_id: string;
+  profile_name: string;
+}
+
+/** A paper-trading profile: a named paper account that keeps its balance and history for good. */
+export interface ReplayProfile {
+  id: string;
+  name: string;
+  initial_balance: number;
+  balance: number;
+  /** Balance minus what it began with, and as a percentage of it. */
+  realized: number;
+  return_pct: number;
+  trades: number;
+  wins: number;
+  losses: number;
+  open_positions: number;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Every profile, and the one the replay trades on. */
+export interface ReplayProfiles {
+  active: string;
+  profiles: ReplayProfile[];
 }
 
 /** Everything that changed when the replay cursor moved. */

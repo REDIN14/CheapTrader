@@ -4,7 +4,8 @@ Kept in ``preferences.json`` in the data folder (next to ``bars.db``), written a
 
 * ``hide_terminal``     — keep the MetaTrader window hidden while the app runs;
 * ``terminal_path``     — the MetaTrader terminal to use, when several are installed;
-* ``allow_live_orders`` — the user has switched on, in the app, sending orders to the broker.
+* ``allow_live_orders`` — the user has switched on, in the app, sending orders to the broker;
+* ``replay_profile``    — the paper-trading profile the replay trades on (see ``replay/profiles.py``).
 """
 
 from __future__ import annotations
@@ -20,7 +21,12 @@ from app import paths
 
 logger = logging.getLogger(__name__)
 
-DEFAULTS: dict[str, Any] = {"hide_terminal": False, "terminal_path": None, "allow_live_orders": False}
+DEFAULTS: dict[str, Any] = {
+    "hide_terminal": False,
+    "terminal_path": None,
+    "allow_live_orders": False,
+    "replay_profile": None,
+}
 
 
 class Preferences:

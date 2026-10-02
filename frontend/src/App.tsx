@@ -17,6 +17,7 @@ import type { Drawing } from "./lib/drawings";
 import { replayMarkers } from "./lib/replayMarkers";
 import { useChartData, type ChartFrame } from "./lib/useChartData";
 import { REPLAY_SPEEDS, useReplay } from "./lib/useReplay";
+import { useReplayProfiles } from "./lib/useReplayProfiles";
 import type {
   ChartGeometry,
   HoverInfo,
@@ -49,6 +50,7 @@ import type { OrderForm } from "./components/OrderTicket";
 import { ReplayTradePanel } from "./components/ReplayTradePanel";
 import { ReplayCut } from "./components/ReplayCut";
 import { ReplayPicker } from "./components/ReplayPicker";
+import { ProfileMenu } from "./components/ProfileMenu";
 import { ReplayReport } from "./components/ReplayReport";
 import { ReplayToolbar } from "./components/ReplayToolbar";
 import { DataCoverage } from "./components/DataCoverage";
@@ -274,9 +276,20 @@ export default function App() {
     appendBars: (bars) => chartBridge.current.append(bars),
     onError: setError,
     onClosed: onReplayClosed,
+    onEnded: () => void profiles.reload(),
   });
   const replayActive = replay.mode === "running";
   const replayPicking = replay.mode === "picking" || replay.mode === "starting";
+
+  // The paper-trading profiles. The replay trades on the active one, so when a profile is chosen,
+  // started over or deleted while a replay runs, the account on screen is read again.
+  const profiles = useReplayProfiles(() => {
+    if (replay.mode === "running") void replay.reloadAccount();
+  });
+  // A replay beginning or ending changes the profile's numbers (what was left open is settled).
+  useEffect(() => {
+    void profiles.reload();
+  }, [replay.mode, profiles.reload]);
 
   // -- the bars on the chart --------------------------------------------------
   // The coverage figures in the dock are only refreshed once the dust has settled,
@@ -1541,9 +1554,32 @@ export default function App() {
   // the trades and on where each open position began, not on its floating profit.
   const openKey = chartPositions.map((p) => `${p.ticket}:${p.time}:${p.side}:${p.volume}`).join("|");
   const markers = useMemo(
-    () => (replayActive ? replayMarkers(replay.trades, chartPositions) : []),
+    () => (replayActive ? replayMarkers(replay.trades, chartPositions, symbol) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [replayActive, replay.trades, openKey],
+    [replayActive, replay.trades, openKey, symbol],
+  );
+
+  // The paper-trading profile menu: where a replay is set up and in the panel beside it while it runs.
+  const profileMenu = (variant: "pill" | "field") => (
+    <ProfileMenu
+      view={profiles.view}
+      busy={profiles.busy}
+      error={profiles.error}
+      onClearError={profiles.clearError}
+      onOpen={profiles.reload}
+      running={replayActive}
+      live={
+        replayActive && replay.account
+          ? { balance: replay.account.balance, openPositions: replay.account.positions.length }
+          : null
+      }
+      variant={variant}
+      onCreate={profiles.create}
+      onSelect={profiles.select}
+      onRename={profiles.rename}
+      onReset={profiles.reset}
+      onDelete={profiles.remove}
+    />
   );
 
   const source = broker === "mt5" ? "MetaTrader 5" : broker === "mock" ? "Mock data" : broker;
@@ -1705,6 +1741,7 @@ export default function App() {
                     newestTime={bars.length ? bars[bars.length - 1].time : null}
                     oldestTime={bars.length ? bars[0].time : null}
                     starting={replay.mode === "starting"}
+                    profileMenu={profileMenu("pill")}
                     onStartAt={(time) => void replay.start(time)}
                     onCancel={replay.exit}
                   />
@@ -1785,7 +1822,7 @@ export default function App() {
                 onFormChange={setOrderForm}
                 onRefresh={replay.refreshAccount}
                 onClosePosition={closePosition}
-                onReset={replay.resetAccount}
+                profileMenu={profileMenu("field")}
                 onOpenReport={() => {
                   if (!replay.reportOpen) replay.toggleReport();
                 }}

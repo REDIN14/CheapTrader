@@ -68,18 +68,27 @@ def test_jump_and_step_agree() -> None:
     ]
 
 
-def test_seek_backward_starts_the_account_again() -> None:
-    engine = engine_over(flat(10))
-    engine.seek(5)
-    engine.paper.place(order(), engine.bars[5])
+def test_seek_backward_closes_what_is_open_and_keeps_the_account() -> None:
+    """Going back in time cannot undo a trade: it is closed where it stood, and the account
+    (balance, history) is not wiped. Starting the account over is the profile's reset."""
+    bars = flat(10)
+    bars[4:] = [bar(i, 1.01) for i in range(4, 10)]
+    engine = engine_over(bars)
+    engine.seek(3)
+    engine.paper.place(order(), engine.bars[3])
+    engine.seek(5)  # the price rose by 0.01 meanwhile
     assert len(engine.paper.positions) == 1
 
     engine.seek(2)
 
     assert engine.index == 2
     assert engine.paper.positions == {}
-    assert engine.paper.closed == []
-    assert engine.paper.balance == engine.paper.initial_balance
+    assert [(t.reason, t.exit_price) for t in engine.paper.closed] == [("rewind", 1.01)]
+    assert engine.paper.balance == pytest.approx(10_000 + 0.01 * 100_000)
+    # only the equity curve starts again, from the new position
+    curve = engine.paper._equity_curve
+    assert len(curve) == 1 and curve[0]["time"] == float(engine.bars[2].time)
+    assert curve[0]["value"] == pytest.approx(engine.paper.balance)
 
 
 def test_begin_puts_the_cursor_and_starts_the_curve_there() -> None:
@@ -92,11 +101,14 @@ def test_begin_puts_the_cursor_and_starts_the_curve_there() -> None:
     assert curve[0]["value"] == 10_000
 
 
-def test_reset_gives_a_fresh_account_even_at_the_first_bar() -> None:
+def test_reset_goes_back_to_the_first_bar_and_keeps_the_account() -> None:
     engine = engine_over(flat(5))
     engine.paper.place(order(), engine.bars[0])
+    engine.seek(3)
     engine.reset()
-    assert engine.paper.positions == {}
+    assert engine.index == 0
+    assert engine.paper.positions == {}  # closed where it stood...
+    assert len(engine.paper.closed) == 1  # ...and kept in the history, not erased
 
 
 def test_advance_reports_the_bars_and_trades_of_the_move() -> None:

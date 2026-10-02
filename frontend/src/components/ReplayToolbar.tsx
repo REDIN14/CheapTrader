@@ -149,7 +149,7 @@ export function ReplayToolbar({
         <GripIcon size={20} />
       </span>
 
-      <button className="rp-btn text" onClick={onPickAgain} title="Pick a new starting bar (starts the paper account over)">
+      <button className="rp-btn text" onClick={onPickAgain} title="Pick a new starting bar (the profile keeps its balance and history)">
         <ScissorsIcon size={20} />
         <span>Select bar</span>
       </button>

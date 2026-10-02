@@ -28,7 +28,13 @@ interface Props {
 type Tab = "overview" | "trades";
 
 const tone = (v: number) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
-const REASON: Record<string, string> = { sl: "Stop loss", tp: "Take profit", manual: "Closed by hand" };
+const REASON: Record<string, string> = {
+  sl: "Stop loss",
+  tp: "Take profit",
+  manual: "Closed by hand",
+  session: "Replay ended",
+  rewind: "Rewound",
+};
 
 /**
  * One headline figure. `sub` is the small line under it (hidden when the drawer is narrow,
@@ -142,6 +148,7 @@ export function ReplayReport({ report, account, cursorTime, intraday, digits, ti
               <thead>
                 <tr>
                   <th>#</th>
+                  <th>Symbol</th>
                   <th>Side</th>
                   <th className="num">Lots</th>
                   <th>Opened</th>
@@ -158,6 +165,7 @@ export function ReplayReport({ report, account, cursorTime, intraday, digits, ti
                 {rows.map(({ t, n, total }) => (
                   <tr key={`${t.ticket}-${t.exit_time}-${n}`}>
                     <td className="muted">{n}</td>
+                    <td>{t.symbol || "—"}</td>
                     <td className={t.side === "BUY" ? "side buy" : "side sell"}>{t.side}</td>
                     <td className="num">{formatLots(t.volume)}</td>
                     <td>{formatShortTime(t.entry_time, intraday)}</td>

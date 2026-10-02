@@ -16,6 +16,7 @@ from app.schemas import (
     OrderRequest,
     OrderResult,
     Position,
+    ProfilesView,
     ReplayAccount,
     ReplayReport,
     ReplayState,
@@ -35,6 +36,19 @@ def _engine() -> ReplayEngine:
             status_code=409, detail="No replay is running. Choose a bar to start one."
         )
     return state.replay
+
+
+def _spec(symbol: str) -> dict[str, float]:
+    """What the paper account needs to know about an instrument to work out a profit in the account's
+    currency: its contract size and what one price step is worth (see PaperPosition.pnl)."""
+    info = get_state().symbols.get(symbol)
+    if info is None:
+        return {"contract_size": 100_000.0}
+    return {
+        "contract_size": info.trade_contract_size or 100_000.0,
+        "tick_size": info.trade_tick_size or 0.0,
+        "tick_value": info.trade_tick_value or 0.0,
+    }
 
 
 def _parse_date(value: str, *, end_of_day: bool = False) -> datetime:
@@ -65,8 +79,7 @@ def load(
     end: str | None = None,
 ) -> ReplayState:
     state = get_state()
-    info = state.symbols.get(symbol)
-    contract_size = info.trade_contract_size if info else 100_000.0
+    spec = _spec(symbol)
     try:
         if start is not None and end is not None:
             # Date-range replay: fetch only the missing parts of the window.
@@ -77,20 +90,21 @@ def load(
                 _parse_date(start),
                 _parse_date(end, end_of_day=True),
             )
-            state.replay = ReplayEngine.from_bars(
-                symbol, timeframe, bars, contract_size=contract_size
+            state.end_replay()  # the one that was running closes its positions and keeps the result
+            engine = ReplayEngine.from_bars(
+                symbol, timeframe, bars, paper=state.profiles.active(), **spec
             )
         else:
-            state.replay = ReplayEngine.load(
-                state.broker.adapter,
-                symbol,
-                timeframe,
-                count=count,
-                contract_size=contract_size,
+            bars = state.broker.adapter.get_bars(symbol, timeframe, count=count)
+            state.end_replay()
+            engine = ReplayEngine.from_bars(
+                symbol, timeframe, bars, paper=state.profiles.active(), **spec
             )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return state.replay.state()
+    engine.begin(0)  # the paper account's session starts on the first bar
+    state.replay = engine
+    return engine.state()
 
 
 #: Bars per day-of-calendar slack when sizing a window: markets close at weekends
@@ -117,8 +131,7 @@ def start(
     start. The reply carries the bars up to the cursor, ready to draw.
     """
     state = get_state()
-    info = state.symbols.get(symbol)
-    contract_size = info.trade_contract_size if info else 100_000.0
+    spec = _spec(symbol)
     step = TIMEFRAME_SECONDS[timeframe]
 
     first_ts = max(0, time - int(lookback * step * _CALENDAR_SLACK))
@@ -139,11 +152,14 @@ def start(
 
     # The window above was sized in calendar time, with room to spare for weekends;
     # trim it to exactly the bars asked for around the start.
-    probe = ReplayEngine.from_bars(symbol, timeframe, bars, contract_size=contract_size)
+    probe = ReplayEngine.from_bars(symbol, timeframe, bars, **spec)
     at = probe.nearest_index(time)
     bars = bars[max(0, at - lookback) : at + lookahead + 1]
 
-    engine = ReplayEngine.from_bars(symbol, timeframe, bars, contract_size=contract_size)
+    # The replay that was running is over: its paper account closes what is open and keeps the result.
+    # The new one trades on the profile the user chose, balance and history included.
+    state.end_replay()
+    engine = ReplayEngine.from_bars(symbol, timeframe, bars, paper=state.profiles.active(), **spec)
     engine.begin(engine.nearest_index(time))
     state.replay = engine
     return _update(engine, engine.visible_bars(), [], reset=True)
@@ -298,6 +314,7 @@ def report(points: int = Query(default=400, ge=4, le=5000)) -> ReplayReport:
 
 @router.post("/reset-account", response_model=BacktestMetrics)
 def reset_account() -> BacktestMetrics:
+    """Start the profile in use over with the balance it began with (history and positions gone)."""
     engine = _engine()
     if engine.paper is None:
         raise HTTPException(status_code=409, detail="Paper engine unavailable")
@@ -305,6 +322,15 @@ def reset_account() -> BacktestMetrics:
     engine.paper.reset()
     engine.paper.mark(bar)  # the curve starts again from here
     return engine.paper.metrics(bar.close)
+
+
+@router.post("/stop", response_model=ProfilesView)
+def stop() -> ProfilesView:
+    """Leave the replay: positions still open are closed at the price under the cursor and the result
+    stays in the profile. Harmless when no replay is running."""
+    state = get_state()
+    state.end_replay()
+    return ProfilesView(active=state.profiles.active_id(), profiles=state.profiles.summaries())
 
 
 def _update(

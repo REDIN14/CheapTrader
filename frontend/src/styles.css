@@ -2453,22 +2453,29 @@ textarea {
   text-transform: uppercase;
 }
 
-.rtp-banner {
+/* "Replay" tag, and the paper-trading profile the replay trades on beside it. */
+.rtp-profile {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  padding: 7px 10px;
+}
+.rtp-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
   background: rgba(41, 98, 255, 0.14);
   border: 1px solid var(--ct-accent);
   border-radius: 6px;
   color: var(--ct-accent-text);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
-.rtp-banner i {
+.rtp-tag i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -2571,21 +2578,309 @@ textarea {
   color: var(--ct-down);
 }
 
-.rtp-reset {
+/* --- paper-trading profiles: the menu that chooses, makes and deletes them ------------- */
+
+.pm-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px 0 9px;
+  border-radius: 6px;
+  color: var(--ct-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.pm-trigger:hover,
+.pm-trigger.open {
+  background: var(--ct-hover);
+  color: var(--ct-text-strong);
+}
+.pm-trigger.pill {
+  max-width: 280px;
+}
+.pm-trigger.field {
+  flex: 1;
+  height: 34px;
+  background: var(--ct-field);
+  border: 1px solid var(--ct-border-strong);
+}
+.pm-trigger.field:hover,
+.pm-trigger.field.open {
+  border-color: var(--ct-accent);
+}
+.pm-trigger svg {
+  flex: none;
+}
+.pm-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-trigger.pill .pm-name {
+  max-width: 140px;
+}
+.pm-trigger.field .pm-name {
+  flex: 1;
+  text-align: left;
+}
+/* the panel's account cells right below already show the balance: the name gets the room */
+.pm-trigger.field .pm-bal {
+  display: none;
+}
+.pm-bal {
+  flex: none;
+  color: var(--ct-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.pm-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--ct-popup);
+  border: 1px solid var(--ct-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  white-space: normal;
+}
+.pm-head {
+  padding: 12px 14px 8px;
+}
+.pm-head b {
+  color: var(--ct-text-strong);
+  font-size: 14px;
+}
+.pm-head small {
+  display: block;
+  margin-top: 4px;
+  color: var(--ct-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 6px;
+  list-style: none;
+}
+.pm-row {
+  border-radius: 6px;
+}
+.pm-row.active {
+  background: rgba(41, 98, 255, 0.1);
+}
+.pm-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.pm-pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+.pm-pick:hover:not(:disabled) {
+  background: var(--ct-hover);
+}
+.pm-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--ct-faint);
+  border-radius: 50%;
+}
+.pm-row.active .pm-dot {
+  background: var(--ct-accent);
+  border-color: var(--ct-accent);
+}
+.pm-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pm-text b {
+  overflow: hidden;
+  color: var(--ct-text-strong);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-text small,
+.pm-money small {
+  overflow: hidden;
+  color: var(--ct-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-money {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.pm-money b {
+  color: var(--ct-text-strong);
+  font-size: 13px;
+}
+.pm-money small.pos {
+  color: var(--ct-up);
+}
+.pm-money small.neg {
+  color: var(--ct-down);
+}
+.pm-actions {
+  display: inline-flex;
+  flex: none;
+}
+.pm-actions button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 34px;
-  border: 1px solid var(--ct-border-strong);
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   color: var(--ct-muted);
+}
+.pm-actions button:hover:not(:disabled),
+.pm-actions button.on {
+  background: var(--ct-hover);
+  color: var(--ct-text-strong);
+}
+.pm-actions button.danger:hover:not(:disabled),
+.pm-actions button.danger.on {
+  color: var(--ct-down);
+}
+.pm-actions button:disabled {
+  opacity: 0.4;
+}
+
+.pm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 4px 6px;
+  padding: 10px 12px;
+  background: var(--ct-field);
+  border-radius: 6px;
+}
+.pm-form p {
+  margin: 0;
+  color: var(--ct-text);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.pm-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ct-muted);
+  font-size: 12px;
+}
+.pm-form input {
+  height: 32px;
+  padding: 0 8px;
+  background: var(--ct-panel);
+  border: 1px solid var(--ct-border-strong);
+  border-radius: 6px;
+  color: var(--ct-text);
   font-size: 13px;
 }
-.rtp-reset:hover,
-.rtp-reset.confirm {
+.pm-form input:focus {
+  border-color: var(--ct-accent);
+  outline: none;
+}
+.pm-buttons {
+  display: flex;
+  gap: 8px;
+}
+.pm-buttons button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--ct-border-strong);
+  border-radius: 6px;
+  color: var(--ct-text);
+  font-size: 13px;
+}
+.pm-buttons button:hover:not(:disabled) {
+  background: var(--ct-hover);
+}
+.pm-buttons .pm-go {
+  background: var(--ct-accent);
+  border-color: var(--ct-accent);
+  color: #fff;
+  font-weight: 700;
+}
+.pm-buttons .pm-go:hover:not(:disabled) {
+  background: var(--ct-accent-hover);
+}
+.pm-buttons .pm-go.danger {
+  background: var(--ct-down);
   border-color: var(--ct-down);
+}
+.pm-buttons .pm-go.danger:hover:not(:disabled) {
+  background: #d92c3b;
+}
+.pm-buttons button:disabled {
+  opacity: 0.45;
+}
+.pm-problem {
   color: var(--ct-down);
+  font-size: 12px;
+}
+.pm-note {
+  color: var(--ct-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pm-foot {
+  margin-top: 8px;
+  padding: 8px 6px 10px;
+  border-top: 1px solid var(--ct-border);
+}
+.pm-foot .pm-form {
+  margin: 0;
+}
+.pm-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--ct-accent-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.pm-add:hover:not(:disabled) {
+  background: var(--ct-hover);
+}
+.pm-error {
+  margin: 8px 2px 0;
+  padding: 8px 10px;
+  background: rgba(242, 54, 69, 0.12);
+  border-radius: 6px;
+  color: var(--ct-down);
+  font-size: 12.5px;
+  line-height: 1.4;
 }
 
 /* stored history coverage */

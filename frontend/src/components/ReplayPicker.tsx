@@ -11,7 +11,7 @@
 // starting never turns into a long download from the broker. Starts older than
 // that are switched off here and say why.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useDismiss } from "../lib/hooks";
 import { TF } from "../lib/timeframes";
 import type { Timeframe } from "../lib/types";
@@ -25,6 +25,8 @@ interface Props {
   oldestTime: number | null;
   /** The backend is loading the window for the bar just chosen. */
   starting: boolean;
+  /** Which paper-trading profile the replay will trade on (the profile menu). */
+  profileMenu?: ReactNode;
   onStartAt: (time: number) => void;
   onCancel: () => void;
 }
@@ -44,7 +46,7 @@ const isoDay = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 10);
 
 const TOO_OLD = "Older than the history loaded on the chart — raise the bar count at the bottom left";
 
-export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starting, onStartAt, onCancel }: Props) {
+export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starting, profileMenu, onStartAt, onCancel }: Props) {
   const [dateOpen, setDateOpen] = useState(false);
   const popRef = useDismiss<HTMLDivElement>(() => setDateOpen(false), dateOpen);
   const [day, setDay] = useState("");
@@ -164,6 +166,13 @@ export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starti
         <DiceIcon size={16} />
         Random
       </button>
+
+      {profileMenu && (
+        <>
+          <span className="rp-sep" />
+          {profileMenu}
+        </>
+      )}
 
       <span className="rp-sep" />
 

@@ -2,6 +2,24 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## Unreleased — paper-trading profiles
+
+**Replay**
+* The paper account is now a **profile**: a named account with a starting balance of your choice. Make as many as
+  you like (one per strategy), switch between them, rename them, start one over with a new balance, delete them.
+  The menu is beside the *Replay* tag in the side panel and at the end of the start bar.
+* A profile **keeps its balance and its whole trade history** when a replay ends, when another replay starts and
+  when the program is restarted. Before, every replay began again with 10,000. Each profile is a file of its own
+  in the data folder (`replay\profiles`), saved on every trade and every couple of seconds while a replay runs.
+* A position still open when a replay ends (leave, pick another bar, close the program, or a crash) is closed at
+  the last price it was marked at and recorded as *Replay ended*; stepping back records *Rewound*.
+* Profit is calculated in the account's currency from the broker's tick value (a yen pair no longer reads in
+  yen), and booked in cents.
+* Trades remember their symbol: the chart marks those of the symbol on screen, the history and the report list
+  them all.
+* New backend routes: `POST /api/replay/stop` and `/api/replay/profiles` (list, make, rename, choose, start over,
+  delete). `reset-account` starts only the profile in use over.
+
 ## 0.1.1 — support links
 
 * The project can be supported on Ko-fi: the link is in the *About & support* window, on the last page of the

@@ -56,9 +56,11 @@ interface Options {
   onError: (message: string) => void;
   /** Stops and targets that closed a position while the cursor moved. */
   onClosed: (trades: BacktestTrade[]) => void;
+  /** The backend has settled the paper account at the end of a replay: its profile has new numbers. */
+  onEnded?: () => void;
 }
 
-export function useReplay({ symbol, timeframe, showBars, appendBars, onError, onClosed }: Options) {
+export function useReplay({ symbol, timeframe, showBars, appendBars, onError, onClosed, onEnded }: Options) {
   const [snap, setSnap] = useState<Snapshot>(IDLE);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = usePersistentState<number>("replaySpeed", DEFAULT_SPEED);
@@ -69,8 +71,8 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
   // created it.
   const snapRef = useRef(snap);
   snapRef.current = snap;
-  const calls = useRef({ showBars, appendBars, onError, onClosed });
-  calls.current = { showBars, appendBars, onError, onClosed };
+  const calls = useRef({ showBars, appendBars, onError, onClosed, onEnded });
+  calls.current = { showBars, appendBars, onError, onClosed, onEnded };
   // Bumped whenever a replay ends or starts over, so a reply that was still on its
   // way for the old one is thrown away instead of landing in the new one.
   const run = useRef(0);
@@ -79,6 +81,8 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
   // they are done as soon as it lands (five quick clicks on "forward" are five bars).
   const wanted = useRef({ steps: 0, end: false });
   const draining = useRef(false);
+  // The request that ends a replay on the server. A start waits for it, so it cannot end the new replay.
+  const ending = useRef<Promise<unknown>>(Promise.resolve());
 
   const commit = useCallback((next: Snapshot) => {
     snapRef.current = next;
@@ -123,8 +127,21 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
     commit({ ...IDLE, mode: "picking" });
   }, [commit]);
 
+  /**
+   * Tell the backend this replay is over: the paper account closes what is still open at the price
+   * under the cursor and the profile keeps the result. (If this does not get through, the next replay
+   * or the next start of the program does the same.)
+   */
+  const endOnServer = useCallback(() => {
+    ending.current = replayApi
+      .stop()
+      .catch(() => undefined)
+      .then(() => calls.current.onEnded?.());
+  }, []);
+
   /** Leave the replay altogether; the chart goes back to the live candles. */
   const exit = useCallback(() => {
+    if (snapRef.current.mode !== "off") endOnServer();
     run.current++;
     moving.current = false;
     wanted.current = { steps: 0, end: false };
@@ -132,17 +149,19 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
     setReport(null);
     setReportOpen(false);
     commit(IDLE);
-  }, [commit]);
+  }, [commit, endOnServer]);
 
   /** Back to choosing a bar; the live candles return so any bar can be picked. */
   const pickAgain = useCallback(() => {
+    // This session is over (the next bar chosen begins another one on the same profile).
+    if (snapRef.current.mode === "running") endOnServer();
     run.current++;
     moving.current = false;
     wanted.current = { steps: 0, end: false };
     setPlaying(false);
     setReport(null);
     commit({ ...IDLE, mode: "picking" });
-  }, [commit]);
+  }, [commit, endOnServer]);
 
   const start = useCallback(
     async (time: number) => {
@@ -150,8 +169,14 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
       const token = ++run.current;
       commit({ ...snapRef.current, mode: "starting" });
       try {
-        const up = await replayApi.start(symbol, timeframe, time);
+        await ending.current;
         if (token !== run.current) return;
+        const up = await replayApi.start(symbol, timeframe, time);
+        if (token !== run.current) {
+          // Left while it was loading: the replay that has just been made is over before it began.
+          if ((snapRef.current.mode as ReplayMode) === "off") endOnServer(); // (the guard above has narrowed the type)
+          return;
+        }
         apply(up, token);
       } catch (err) {
         if (token !== run.current) return;
@@ -159,7 +184,7 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
         calls.current.onError((err as Error).message);
       }
     },
-    [symbol, timeframe, apply, commit],
+    [symbol, timeframe, apply, commit, endOnServer],
   );
 
   // -- moving the cursor ---------------------------------------------------------
@@ -309,14 +334,17 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
     [commit],
   );
 
-  const resetAccount = useCallback(async () => {
+  /** The replay trades on another account now (a profile was chosen, started over or deleted): read it and its history again. */
+  const reloadAccount = useCallback(async () => {
+    const token = run.current;
     try {
-      await replayApi.resetAccount();
-    } catch (err) {
-      calls.current.onError((err as Error).message);
+      const [account, trades] = await Promise.all([replayApi.account(), replayApi.trades()]);
+      if (token !== run.current || snapRef.current.mode !== "running") return;
+      commit({ ...snapRef.current, account, trades });
+    } catch {
+      /* the next move brings the account along anyway */
     }
-    await refreshAccount();
-  }, [refreshAccount]);
+  }, [commit]);
 
   // -- the report ---------------------------------------------------------------------
   // Read while it is open: straight away, then at most about once a second however
@@ -363,8 +391,8 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
       toggle,
       setSpeed,
       refreshAccount,
+      reloadAccount,
       patchPositions,
-      resetAccount,
       toggleReport,
     }),
     [
@@ -384,8 +412,8 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
       toggle,
       setSpeed,
       refreshAccount,
+      reloadAccount,
       patchPositions,
-      resetAccount,
       toggleReport,
     ],
   );

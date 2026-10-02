@@ -18,6 +18,7 @@ from app.api import (
     docs_router,
     drawing_router,
     indicator_router,
+    profile_router,
     replay_router,
     snapshot_router,
     terminal_router,
@@ -51,6 +52,7 @@ if allowed_origins():
 app.add_middleware(LocalOnly)
 
 app.include_router(api_router)
+app.include_router(profile_router)
 app.include_router(replay_router)
 app.include_router(indicator_router)
 app.include_router(snapshot_router)

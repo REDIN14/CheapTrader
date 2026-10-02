@@ -4,7 +4,6 @@ import type { Drawing, DrawingPoint, DrawingStyle } from "./drawings";
 import type {
   AccountInfo,
   PendingOrder,
-  BacktestMetrics,
   BacktestTrade,
   Bar,
   DataStat,
@@ -17,6 +16,7 @@ import type {
   OrderResult,
   Position,
   ReplayAccount,
+  ReplayProfiles,
   ReplayReport,
   ReplayState,
   ReplayUpdate,
@@ -229,8 +229,36 @@ export const replayApi = {
 
   trades: () => request<BacktestTrade[]>("/api/replay/trades"),
 
-  resetAccount: () =>
-    request<BacktestMetrics>("/api/replay/reset-account", { method: "POST" }),
+  /** Leave the replay: what is still open is closed at the price under the cursor and kept in the profile. */
+  stop: () => request<ReplayProfiles>("/api/replay/stop", { method: "POST" }),
+
+  // Paper-trading profiles: every reply is the whole list.
+  profiles: () => request<ReplayProfiles>("/api/replay/profiles"),
+
+  createProfile: (name: string, balance: number, activate = true) =>
+    request<ReplayProfiles>("/api/replay/profiles", {
+      method: "POST",
+      body: JSON.stringify({ name, balance, activate }),
+    }),
+
+  renameProfile: (id: string, name: string) =>
+    request<ReplayProfiles>(`/api/replay/profiles/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  selectProfile: (id: string) =>
+    request<ReplayProfiles>(`/api/replay/profiles/${encodeURIComponent(id)}/select`, { method: "POST" }),
+
+  /** Begin the profile again: no history, the balance it began with, or `balance`. */
+  resetProfile: (id: string, balance?: number) =>
+    request<ReplayProfiles>(`/api/replay/profiles/${encodeURIComponent(id)}/reset`, {
+      method: "POST",
+      body: JSON.stringify(balance === undefined ? {} : { balance }),
+    }),
+
+  deleteProfile: (id: string) =>
+    request<ReplayProfiles>(`/api/replay/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 export const indicatorApi = {

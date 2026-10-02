@@ -13,7 +13,12 @@ const DOWN = "#f23645";
 /** Past this many trades the labels would crowd each other, so only the shapes are drawn. */
 const MAX_LABELLED = 40;
 
-export function replayMarkers(trades: BacktestTrade[], open: Position[]): ChartMarker[] {
+/**
+ * A profile's history spans every symbol it was used on, so only the trades of `symbol` are marked
+ * (trades with no symbol, from before profiles, are marked wherever they are).
+ */
+export function replayMarkers(all: BacktestTrade[], open: Position[], symbol?: string | null): ChartMarker[] {
+  const trades = symbol ? all.filter((t) => !t.symbol || t.symbol === symbol) : all;
   const labels = trades.length + open.length <= MAX_LABELLED;
   const out: ChartMarker[] = [];
 

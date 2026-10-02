@@ -2,8 +2,8 @@
 //
 // What a lot loses when the price moves a given distance comes from the instrument: one price step
 // ("tick") of one lot is worth `tickValue` in the account's currency, and a step is `tickSize` of price.
-// The broker gives both; the paper account of a replay pays in the plain way (price distance x contract
-// size), so it has its own reading of the same figures.
+// The broker gives both. The paper account of a replay pays by the same figures (see PaperPosition.pnl in
+// the backend), so a box is sized the same way live and in a replay.
 
 import type { Symbol } from "./types";
 
@@ -19,15 +19,15 @@ export interface SizingSpec {
 }
 
 /**
- * The sizing figures of an instrument. In a replay (`paper`) the account is plain arithmetic: a distance
- * of `d` costs `d x contract size` per lot, whatever the broker says a tick is worth.
+ * The sizing figures of an instrument: the broker's tick value when it gives one, else a price step times
+ * the contract size.
  */
-export function specOf(symbol: Pick<Symbol, "point" | "trade_contract_size" | "trade_tick_size" | "trade_tick_value" | "volume_min" | "volume_max" | "volume_step">, paper = false): SizingSpec {
+export function specOf(symbol: Pick<Symbol, "point" | "trade_contract_size" | "trade_tick_size" | "trade_tick_value" | "volume_min" | "volume_max" | "volume_step">): SizingSpec {
   const tickSize = symbol.trade_tick_size > 0 ? symbol.trade_tick_size : symbol.point;
-  const live = symbol.trade_tick_value > 0 && symbol.trade_tick_size > 0 && !paper;
+  const known = symbol.trade_tick_value > 0 && symbol.trade_tick_size > 0;
   return {
     tickSize,
-    tickValue: live ? symbol.trade_tick_value : tickSize * symbol.trade_contract_size,
+    tickValue: known ? symbol.trade_tick_value : tickSize * symbol.trade_contract_size,
     min: symbol.volume_min > 0 ? symbol.volume_min : 0.01,
     max: symbol.volume_max > 0 ? symbol.volume_max : 100,
     step: symbol.volume_step > 0 ? symbol.volume_step : 0.01,
