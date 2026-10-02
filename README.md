@@ -73,9 +73,9 @@ More: **[Getting started](docs/GETTING_STARTED.md)** (including what to do when 
 
 ## Support the project
 
-CheapTrader is free and made in spare time. If it is useful to you, you can support its development: use the
-**Sponsor** button at the top of this page, or *About & support* in the app. Bug reports, ideas and pull requests
-are just as welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+CheapTrader is free and made in spare time. If it is useful to you, a ⭐ on this page, a bug report, an idea or a
+pull request (see [CONTRIBUTING.md](CONTRIBUTING.md)) helps most. Donation links, once the project has them, appear
+as the **Sponsor** button of this repository and under *About & support* in the app.
 
 ## Licence and credits
 
