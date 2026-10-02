@@ -2,6 +2,11 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## 0.1.1 — support links
+
+* The project can be supported on Ko-fi: the link is in the *About & support* window, on the last page of the
+  welcome tour, in the README and behind the repository's **Sponsor** button.
+
 ## 0.1.0 — first public release
 
 **Charts and data**

@@ -21,7 +21,7 @@ export const PROJECT = {
   /** Where to donate, in the order they are shown. */
   support: [
     { id: "github", label: "GitHub Sponsors", url: "" },
-    { id: "kofi", label: "Ko-fi", url: "" },
+    { id: "kofi", label: "Ko-fi", url: "https://ko-fi.com/redin010" },
     { id: "liberapay", label: "Liberapay", url: "" },
     { id: "paypal", label: "PayPal", url: "" },
   ] as SupportLink[],
