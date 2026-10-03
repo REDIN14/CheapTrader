@@ -150,4 +150,5 @@ price, so the result is not lost.
 | It cannot find MetaTrader though it is installed | start MetaTrader once by hand and log in; then reopen the tour. A portable install must be running to be found |
 | The prices are late | the MetaTrader menu or the dot next to the chart title says whether MetaTrader is busy |
 | A drawing cannot be moved or deleted | it is locked: press the padlock in its bar |
+| The window says "this page is not reachable" (connection refused) | CheapTrader is not running: its window can only show the program while the program is open. Close that window and open CheapTrader from the Start menu. (Closing the program and opening it again at once is fine: the new start waits for the old one to end.) |
 | Something else | the program writes a log to `data\logs` next to it. Report problems on the project page (About, *Report a problem*) and attach the last lines |

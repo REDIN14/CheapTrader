@@ -5,7 +5,10 @@ MetaTrader helper processes) as one server on this machine only, opens it in a w
 its own (Edge or Chrome in "app" mode, so no tabs and no address bar), and stops everything
 when that window is closed.
 
-* a second start while one is running just opens another window onto the first;
+* a second start while one is running just opens another window onto the first (after asking it to stay for that
+  window: a copy whose window has just been closed ends a few seconds later, and a window opened on a copy
+  that is ending would show "connection refused"). A second start that finds the first one on its way out waits
+  for it to end and starts afresh;
 * ``--no-window`` serves without a window (stop it with Task Manager or ``taskkill``);
 * ``--reconnect`` is what an update starts the new version with: the window the old version left open is
   used again instead of opening another;
@@ -26,6 +29,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -123,8 +127,8 @@ def open_window(url: str) -> subprocess.Popen | None:
 _user32 = None
 
 
-def visible_titles() -> list[str]:
-    """The titles of the windows on the desktop (minimised ones too)."""
+def _top_level_windows() -> list[tuple[int, str]]:
+    """``(handle, title)`` of the windows on the desktop that have a title (minimised ones too)."""
     global _user32
     if os.name != "nt":
         return []
@@ -136,7 +140,8 @@ def visible_titles() -> list[str]:
         _user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
         _user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
         _user32.EnumWindows.argtypes = [ctypes.c_void_p, wintypes.LPARAM]
-    titles: list[str] = []
+        _user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    found: list[tuple[int, str]] = []
 
     def visit(hwnd, _lparam) -> bool:
         if _user32.IsWindowVisible(hwnd):
@@ -144,16 +149,33 @@ def visible_titles() -> list[str]:
             if length:
                 buffer = ctypes.create_unicode_buffer(length + 1)
                 _user32.GetWindowTextW(hwnd, buffer, length + 1)
-                titles.append(buffer.value)
+                found.append((int(hwnd or 0), buffer.value))
         return True
 
     _user32.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(visit), 0)
-    return titles
+    return found
+
+
+def visible_titles() -> list[str]:
+    """The titles of the windows on the desktop (minimised ones too)."""
+    return [title for _hwnd, title in _top_level_windows()]
+
+
+def _shows_the_app(title: str, port: int) -> bool:
+    return "CheapTrader" in title and f":{port}" in title
+
+
+def close_windows(port: int) -> None:
+    """Ask the windows that show the app on ``port`` to close, as their close button does (the Quit button ends the
+    program, so its window goes with it and is not left showing a page that nothing serves)."""
+    for hwnd, title in _top_level_windows():
+        if _shows_the_app(title, port):
+            _user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
 
 
 def app_window_open(port: int) -> bool:
     """Is there a window showing the app? The page names itself "CheapTrader · 127.0.0.1:<port>"."""
-    return any("CheapTrader" in title and f":{port}" in title for title in visible_titles())
+    return any(_shows_the_app(title, port) for title in visible_titles())
 
 
 def window_returns(port: int, within: float = 8.0, *, shown=app_window_open, clock=time.monotonic, sleep=time.sleep) -> bool:
@@ -171,6 +193,65 @@ def window_returns(port: int, within: float = 8.0, *, shown=app_window_open, clo
 CLOSE_GRACE = 4.0
 #: How long to wait for the window to show up at all.
 APPEAR_WITHIN = 60.0
+#: How long the program stays for a window that a second start has announced (Edge may need a while to open it).
+EXPECT_WINDOW_FOR = 20.0
+#: How long the server waits for a request that is still being worked on when the program ends. Without a limit a
+#: big history read that the closed window had asked for keeps the program alive until it is done, and whoever
+#: opens the program again meanwhile has to wait for it.
+SHUTDOWN_GRACE = 5
+
+
+class Lifetime:
+    """When the program may end, and whether a window is on its way.
+
+    The program ends when its window has been closed for a few seconds. If the user opens CheapTrader again
+    just then, the second start finds this copy still running and opens a window on it. Two things must hold:
+    this copy must not end while that window is opening (it takes a second or two before the window has the
+    page's name, and the program looks for its window by that name), and a window must never be opened on a copy
+    that is already ending. So a second start announces its window (``expect_window``) and is refused if this copy
+    has decided to end; the copy decides to end (``may_end``) only when no window is announced. Both happen
+    under one lock, so whichever comes first wins and the other knows.
+    """
+
+    def __init__(self, clock=time.monotonic) -> None:
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._expected_until = 0.0
+        self._ending = False
+
+    def expect_window(self, within: float = EXPECT_WINDOW_FOR) -> bool:
+        """A window is about to open on this copy. False: the copy is ending, so no window may."""
+        with self._lock:
+            if self._ending:
+                return False
+            self._expected_until = max(self._expected_until, self._clock() + within)
+            return True
+
+    def expecting(self) -> bool:
+        with self._lock:
+            return self._clock() < self._expected_until
+
+    def may_end(self) -> bool:
+        """The window has been closed for good, as far as this copy can tell. True: it ends now, and from here on
+        refuses every window. False: a window has been announced, so it goes on."""
+        with self._lock:
+            if self._clock() < self._expected_until:
+                return False
+            self._ending = True
+            return True
+
+    def end(self) -> None:
+        """It ends whatever is expected (Quit, an update, the server stopped): no window may open on it any more."""
+        with self._lock:
+            self._ending = True
+
+    @property
+    def ending(self) -> bool:
+        with self._lock:
+            return self._ending
+
+
+lifetime = Lifetime()
 
 
 def wait_until_closed(
@@ -178,6 +259,8 @@ def wait_until_closed(
     alive,
     *,
     shown=app_window_open,
+    expecting=lambda: False,
+    end=lambda: True,
     clock=time.monotonic,
     sleep=time.sleep,
     poll: float = 0.5,
@@ -186,7 +269,9 @@ def wait_until_closed(
 
     The window is looked for on the desktop rather than waited for as a process: Edge may hand the
     window to a browser that is already running and exit at once, which says nothing about whether
-    the window is still open.
+    the window is still open. A window that a second start has announced (``expecting``) counts as shown until
+    it is: it has no name yet when it opens. ``end`` asks whether the program may end now; it says no when such a
+    window was announced a moment ago (see ``Lifetime``).
     """
     began = clock()
     seen = False
@@ -194,13 +279,15 @@ def wait_until_closed(
     while alive():
         sleep(poll)
         now = clock()
-        if shown(port):
+        if shown(port) or expecting():
             seen, gone = True, None
         elif seen:
             gone = now if gone is None else gone
             if now - gone >= CLOSE_GRACE:
-                logger.info("the window was closed")
-                return
+                if end():
+                    logger.info("the window was closed")
+                    return
+                gone = None  # a window was announced just now: wait for it
         elif now - began > APPEAR_WITHIN:
             logger.warning("no window with the app appeared; leaving the server running")
             while alive():
@@ -229,22 +316,98 @@ def free_port(preferred: int) -> int:
     raise OSError("no free port")
 
 
+LOCK_NAME = "Local\\CheapTrader.singleton"
 _singleton = None  # the handle must live as long as the program does
 
 
-def already_started() -> bool:
-    """True when another copy of the program is running (or still starting).
+def acquire_singleton(name: str = LOCK_NAME) -> bool:
+    """Take the lock that says "this is the program": True when this process now holds it, False when another copy does.
 
-    The first copy owns a named mutex; a second start finds it taken. That is how a double
-    click while the first copy is still coming up (it can take ten seconds, a minute the very
-    first time) does not start a second server.
+    The first copy owns a named mutex; a second start finds it taken. That is how a double click while the first
+    copy is still coming up (it can take ten seconds, a minute the very first time) does not start a second server.
+
+    A try that fails lets go of its handle at once. A named object lives for as long as anyone holds it, so a start
+    that waited for the other copy to end while holding a handle would keep the lock alive after that copy was gone:
+    every later start would find it "taken" and the program could not be opened until that wait was over.
     """
     global _singleton
     if os.name != "nt":
-        return False
+        return True
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    _singleton = kernel32.CreateMutexW(None, False, "Local\\CheapTrader.singleton")
-    return ctypes.get_last_error() == 183  # ERROR_ALREADY_EXISTS
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    ctypes.set_last_error(0)
+    handle = kernel32.CreateMutexW(None, False, name)
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        if handle:
+            kernel32.CloseHandle(handle)
+        return False
+    _singleton = handle
+    return True
+
+
+def ask_to_stay(port: int) -> bool:
+    """Tell the copy of the program on ``port`` that a window is about to open on it. False: it did not agree (it is
+    ending, or it does not answer), so no window may be opened on it."""
+    request = urllib.request.Request(
+        f"http://{HOST}:{port}/api/app/window", data=b"{}", method="POST", headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            return json.loads(response.read()).get("ok") is True
+    except (OSError, ValueError, urllib.error.URLError):
+        return False
+
+
+def show_window(url: str) -> None:
+    """A window on the program: its own (Edge or Chrome), else the default browser."""
+    if open_window(url) is None:
+        webbrowser.open(url)
+
+
+def lead_or_join(
+    argv: list[str],
+    *,
+    acquire=None,
+    port_of=None,
+    alive=None,
+    ask=None,
+    show=None,
+    warn=None,
+    clock=time.monotonic,
+    sleep=time.sleep,
+    patience: float | None = None,
+) -> bool:
+    """Is this start the program? True when it has taken the lock and goes on to be it.
+
+    False when another copy has it and this start has dealt with that: the other copy was up and agreed to stay, and a
+    window has been opened on it; or it never came up in ``patience`` seconds (the user is told). A copy that is ending is waited for:
+    when it is gone the lock is free and this start takes it, so the user who closed the program and opened it again
+    a moment later gets a program, not a window on one that has just stopped (and not a start that does nothing).
+    """
+    acquire = acquire or acquire_singleton
+    port_of = port_of or running_port
+    alive = alive or health
+    ask = ask or ask_to_stay
+    show = show or show_window
+    warn = warn or (lambda text: message(text, error=True))
+    patience = START_TIMEOUT if patience is None else patience
+    began = clock()
+    while not acquire():
+        port = port_of()
+        if alive(port) is not None and ask(port):
+            if "--no-window" not in argv:
+                show(f"http://{HOST}:{port}/")
+            return False
+        if clock() - began > patience:
+            if "--no-window" not in argv:
+                warn(
+                    "CheapTrader is already open but does not answer.\n\nIf it does not come up in a moment, end "
+                    "CheapTrader in Task Manager and open it again."
+                )
+            return False
+        sleep(0.3)
+    return True
 
 
 def port_file() -> Path:
@@ -272,13 +435,7 @@ def run(argv: list[str] | None = None) -> int:
         sys.stdout = open(os.devnull, "w")
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
-    if already_started():  # another copy is running or starting: just another window onto it (and not a word in its log)
-        waited = time.monotonic()
-        while health(running_port()) is None and time.monotonic() - waited < START_TIMEOUT:
-            time.sleep(0.5)
-        url = f"http://{HOST}:{running_port()}/"
-        if health(running_port()) is not None and "--no-window" not in argv and open_window(url) is None:
-            webbrowser.open(url)
+    if not lead_or_join(argv):  # another copy has the lock: a window onto it, or nothing (and not a word in its log)
         return 0
     if "--console" in argv:
         attach_console()
@@ -295,14 +452,22 @@ def run(argv: list[str] | None = None) -> int:
 
     from app.main import app
 
-    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_config=None, access_log=False))
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=HOST, port=port, log_config=None, access_log=False, timeout_graceful_shutdown=SHUTDOWN_GRACE)
+    )
     thread = threading.Thread(target=server.run, name="server", daemon=True)
     thread.start()
 
     from app.api import terminal_routes
 
-    # the page's Quit button (MetaTrader menu) stops the program
-    terminal_routes.quit_hook = lambda: setattr(server, "should_exit", True)
+    def quit_now() -> None:
+        lifetime.end()  # no window may be opened on it from here on
+        server.should_exit = True
+
+    # the page's Quit button (MetaTrader menu) stops the program, and its window with it; a second start announces its window
+    terminal_routes.quit_hook = quit_now
+    terminal_routes.window_closer = lambda: close_windows(port)
+    terminal_routes.window_hook = lifetime.expect_window
 
     began = time.monotonic()
     while health(port) is None:
@@ -321,8 +486,8 @@ def run(argv: list[str] | None = None) -> int:
         # Started by an update (see app/updater.py): the window of the version that was replaced is still open,
         # and its page reloads by itself as soon as this server answers. Opening another would make two.
         logger.info("the window of the previous version is still open and reconnects by itself")
-        wait_until_closed(port, thread.is_alive)
-        return stop(server, thread)
+        wait_until_closed(port, thread.is_alive, expecting=lifetime.expecting, end=lifetime.may_end)
+        return stop(server, thread, port)
 
     if open_window(url) is None:
         # No Edge or Chrome: the default browser. There is no window of ours to watch then, so the
@@ -330,12 +495,20 @@ def run(argv: list[str] | None = None) -> int:
         webbrowser.open(url)
         thread.join()
         return 0
-    wait_until_closed(port, thread.is_alive)
-    return stop(server, thread)
+    wait_until_closed(port, thread.is_alive, expecting=lifetime.expecting, end=lifetime.may_end)
+    return stop(server, thread, port)
 
 
-def stop(server, thread: threading.Thread) -> int:
+def stop(server, thread: threading.Thread, port: int) -> int:
+    if not thread.is_alive() and not lifetime.ending:
+        # The server ended by itself, which nobody asked for. A window left open would show a page that nothing
+        # serves ("connection refused" once it is reloaded): close it, and say what happened.
+        logger.error("the server stopped by itself")
+        close_windows(port)
+        message(f"CheapTrader stopped unexpectedly.\n\nThe details are in\n{paths.logs_dir() / 'cheaptrader.log'}", error=True)
+        return 1
     logger.info("stopping")
+    lifetime.end()
     server.should_exit = True
     thread.join(timeout=40)
     return 0

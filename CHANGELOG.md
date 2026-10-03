@@ -2,6 +2,22 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## 0.2.1 — opening the program again right after closing it
+
+* **No more "this page is not reachable".** Closing CheapTrader and opening it again within a few seconds could leave
+  a window that said *127.0.0.1 refused the connection* (or, at other moments, open nothing at all for minutes).
+  The program ends a few seconds after its window is closed; the second start found it still running, opened a window
+  on it, and the program then ended under that window. Now the second start asks the running copy to stay for the
+  window, and a copy that is already ending is waited for: the second start then begins the program afresh.
+* A start that waits for a copy that is ending no longer keeps the program from opening later (it held a lock that
+  only the other copy should hold).
+* The program ends within a few seconds of deciding to, even when a request is still being answered (a big history
+  read for a window that is gone no longer keeps it running).
+* **Quit** in the MetaTrader menu closes the window with the program, instead of leaving a window whose page nothing
+  serves. If the program's server ever stops by itself, the window is closed and a message says so (the details are
+  in `data\logs`).
+* If an open CheapTrader does not answer, a second start says so after three minutes instead of doing nothing.
+
 ## 0.2.0 — your account's results, in the replay's report
 
 * **How the live account has done.** The bar at the bottom of the live chart shows what the replay's bar shows:

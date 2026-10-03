@@ -7,7 +7,9 @@
 * ``POST /api/terminal/window``   hide or show the terminal's window (remembered);
 * ``POST /api/terminal/choose``   pick which installed terminal to use the next time the app starts;
 * ``POST /api/app/orders``        switch on (or off) sending orders to the broker from the app (remembered);
-* ``POST /api/app/quit``          stop the packaged program (``CheapTrader.exe``).
+* ``POST /api/app/window``        a second start of the program says a window is about to open on this copy (it
+  stays for it, and says no when it is already ending);
+* ``POST /api/app/quit``          stop the packaged program (``CheapTrader.exe``), and close its window.
 """
 
 from __future__ import annotations
@@ -31,6 +33,10 @@ router = APIRouter(prefix="/api", tags=["terminal"])
 
 #: Set by the packaged program: stops it. None while developing.
 quit_hook: Callable[[], None] | None = None
+#: Set by the packaged program: closes its window (Quit ends the program, so its window goes too).
+window_closer: Callable[[], None] | None = None
+#: Set by the packaged program: a window is about to open on this copy. True: it stays for it; False: it is ending.
+window_hook: Callable[[], bool] | None = None
 
 _scan: tuple[float, list[terminals.Terminal]] = (0.0, [])
 SCAN_TTL = 10.0
@@ -137,9 +143,18 @@ def terminal_choose(request: ChooseRequest) -> dict:
     return _status()
 
 
+@router.post("/app/window")
+def window_expected() -> dict:
+    """A second start of the program found this copy running and is about to open a window on it. ``ok`` false: this copy
+    is ending, so no window may be opened on it (the second start waits for it to end and starts afresh)."""
+    return {"ok": True if window_hook is None else bool(window_hook())}
+
+
 @router.post("/app/quit")
 def quit_app(background: BackgroundTasks) -> dict:
     if quit_hook is None:
         raise HTTPException(status_code=409, detail="CheapTrader was not started as the packaged program: stop it where it was started.")
-    background.add_task(quit_hook)  # after the answer has gone out
+    if window_closer is not None:
+        background.add_task(window_closer)  # after the answer has gone out: the window first, then the program
+    background.add_task(quit_hook)
     return {"ok": True}

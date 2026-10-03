@@ -243,6 +243,13 @@
   <h2 id="changes-h">Recent changes</h2>
   <div class="body">
     <dl class="log">
+      <dt>0.2.1 <time datetime="2026-10-03">3 October 2026</time></dt>
+      <dd>
+        <ul>
+          <li>Closing the program and opening it again within a few seconds could leave a window saying “127.0.0.1 refused the connection”, or open nothing. The second start now asks the running copy to stay, or waits for the copy that is ending and starts afresh.</li>
+          <li>Quit closes the window with the program. If the server ever stops by itself, the window is closed and a message says so.</li>
+        </ul>
+      </dd>
       <dt>0.2.0 <time datetime="2026-10-03">3 October 2026</time></dt>
       <dd>
         <ul>

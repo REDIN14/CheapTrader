@@ -900,10 +900,13 @@ reuses the existing `frontend/dist` instead of building the page again.
   `CheapTrader · 127.0.0.1:8765`); closing that window stops everything, including the
   helper processes, a few seconds later and without asking. The program finds its window on
   the desktop by that title, so it does not matter how Edge was started. A second
-  double-click just opens another window onto the running copy. It serves on
+  double-click just opens another window onto the running copy; it first asks that copy to
+  stay for the window (a copy ends a few seconds after its window is closed, and a window opened
+  just then would show "connection refused"), and a second start that finds the copy already ending waits for
+  it to end and starts the program afresh, so closing it and opening it again at once works. It serves on
   `127.0.0.1:8765` (this PC only; `CT_PORT` changes it), so it does not clash with the
   development servers on 8000 / 5173. The **MetaTrader** menu in the account bar can also
-  quit it (see below); that is the only way when neither Edge nor Chrome is installed and
+  quit it, window included (see below); that is the only way when neither Edge nor Chrome is installed and
   the page opens in the default browser instead.
 - **Settings** are in `.env` next to the exe. The build writes it once, copying only
   `CT_BROKER` and `CT_ALLOW_LIVE_ORDERS` from `backend/.env` (nothing else: that file may
