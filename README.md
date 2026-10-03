@@ -88,6 +88,10 @@ touched. If the download does not match its checksum it is thrown away and nothi
 
 * Only a copy set up by the installer can install itself. A portable copy (the zip) or one run from the source
   shows the same window with a link to the release page instead.
+* Leave CheapTrader alone while it installs: it closes, its window stays and waits, and it opens again by itself (about
+  half a minute). A start by hand meanwhile waits for the installer (a running program would keep the installer from
+  replacing it, which is what ended an update with exit code 5), and it opens no second window. The script that does
+  this comes from the version that is being replaced, so the protection is there from the update after 0.2.2.
 * Nothing is downloaded until you click Install. **Skip this version** hides that release; the next one is offered.
 * The only request made is `GET /repos/REDIN14/CheapTrader/releases/latest` on `api.github.com`, with a
   `User-Agent` of `CheapTrader/<version>`. Downloads come from GitHub's own hosts only; a redirect anywhere
@@ -900,10 +904,13 @@ reuses the existing `frontend/dist` instead of building the page again.
   `CheapTrader · 127.0.0.1:8765`); closing that window stops everything, including the
   helper processes, a few seconds later and without asking. The program finds its window on
   the desktop by that title, so it does not matter how Edge was started. A second
-  double-click just opens another window onto the running copy; it first asks that copy to
-  stay for the window (a copy ends a few seconds after its window is closed, and a window opened
-  just then would show "connection refused"), and a second start that finds the copy already ending waits for
-  it to end and starts the program afresh, so closing it and opening it again at once works. It serves on
+  double-click just opens another window onto the running copy: the running copy opens it itself, and only
+  while it is not ending (a copy ends a few seconds after its window is closed, and a window opened
+  just then would show "connection refused"); a second start that finds the copy already ending waits for
+  it to end and starts the program afresh, so closing it and opening it again at once works. Every window is
+  a process of a Windows job that ends with the program (`backend/app/windowjob.py`), so ending CheapTrader by
+  force (Task Manager's *End task*) takes its window with it instead of leaving one that shows a page nothing
+  serves; an update is the one exception, its window stays open until the new version answers. It serves on
   `127.0.0.1:8765` (this PC only; `CT_PORT` changes it), so it does not clash with the
   development servers on 8000 / 5173. The **MetaTrader** menu in the account bar can also
   quit it, window included (see below); that is the only way when neither Edge nor Chrome is installed and

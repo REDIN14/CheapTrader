@@ -5,10 +5,13 @@ MetaTrader helper processes) as one server on this machine only, opens it in a w
 its own (Edge or Chrome in "app" mode, so no tabs and no address bar), and stops everything
 when that window is closed.
 
-* a second start while one is running just opens another window onto the first (after asking it to stay for that
-  window: a copy whose window has just been closed ends a few seconds later, and a window opened on a copy
-  that is ending would show "connection refused"). A second start that finds the first one on its way out waits
-  for it to end and starts afresh;
+* a second start while one is running asks the first to open another window onto itself (a copy whose window
+  has just been closed ends a few seconds later, and a window opened on a copy that is ending would show
+  "connection refused", so the first copy only agrees while it is not ending). A second start that finds the first
+  one on its way out waits for it to end and starts afresh. Only the first copy ever starts a window, so every window
+  belongs to a Windows job that ends with the program (``app/windowjob.py``): ending the program by force (Task
+  Manager) takes its windows with it, instead of leaving one that shows a page nothing serves;
+* a start while an update is being installed waits for it (the installer cannot replace a program that is running);
 * ``--no-window`` serves without a window (stop it with Task Manager or ``taskkill``);
 * ``--reconnect`` is what an update starts the new version with: the window the old version left open is
   used again instead of opening another;
@@ -35,6 +38,7 @@ import webbrowser
 from pathlib import Path
 
 from app import paths
+from app.windowjob import WindowJob
 
 TITLE = "CheapTrader"
 #: The port when ``CT_PORT`` does not say (8000 is the development server's).
@@ -94,14 +98,14 @@ def find_browser() -> str | None:
     return None
 
 
-def open_window(url: str) -> subprocess.Popen | None:
-    """The app window. It has a profile of its own so that it is a browser process of its own:
-    waiting for it is then waiting for the user to close the window."""
+def open_window(url: str, job: WindowJob | None = None) -> subprocess.Popen | None:
+    """The app window. It has a profile of its own so that it is a browser process of its own. With a ``job`` the window
+    is tied to the program: the system ends it when the program ends, however that happens."""
     browser = find_browser()
     if browser is None:
         return None
     profile = paths.data_dir() / "window"
-    return subprocess.Popen(
+    process = subprocess.Popen(
         [
             browser,
             f"--app={url}",
@@ -109,6 +113,9 @@ def open_window(url: str) -> subprocess.Popen | None:
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-background-mode",
+            # a window that was ended by force leaves its profile "not closed properly": no question about it in the window
+            "--disable-session-crashed-bubble",
+            "--hide-crash-restore-bubble",
             "--window-size=1600,950",
             # A fresh Edge profile otherwise downloads ~900 MB of components and bundled extensions
             # into the data folder; this is a window onto one page, it needs none of that (21 MB).
@@ -122,6 +129,9 @@ def open_window(url: str) -> subprocess.Popen | None:
             "--disable-domain-reliability",
         ]
     )
+    if job is not None:
+        job.add(process)
+    return process
 
 
 _user32 = None
@@ -252,6 +262,8 @@ class Lifetime:
 
 
 lifetime = Lifetime()
+#: The processes of the windows this program has opened: they end with it (see ``app/windowjob.py``).
+window_job = WindowJob()
 
 
 def wait_until_closed(
@@ -346,23 +358,56 @@ def acquire_singleton(name: str = LOCK_NAME) -> bool:
     return True
 
 
-def ask_to_stay(port: int) -> bool:
-    """Tell the copy of the program on ``port`` that a window is about to open on it. False: it did not agree (it is
-    ending, or it does not answer), so no window may be opened on it."""
+def ask_for_window(port: int, *, open_one: bool = True, unless_shown: bool = False) -> str:
+    """Ask the copy of the program on ``port`` for a window onto itself.
+
+    ``"handled"``: it agreed and opened the window itself (a window that the copy opens belongs to its job, so it ends
+    with it); ``"stay"``: it agreed to stay for a window that this start opens (a copy too old to open one itself);
+    ``"refused"``: it is ending, or it does not answer, so no window may be opened on it.
+    ``open_one`` false asks only for it to stay; ``unless_shown`` asks it to open none when one is already showing.
+    """
+    body = json.dumps({"open": open_one, "unless_shown": unless_shown}).encode()
     request = urllib.request.Request(
-        f"http://{HOST}:{port}/api/app/window", data=b"{}", method="POST", headers={"Content-Type": "application/json"}
+        f"http://{HOST}:{port}/api/app/window", data=body, method="POST", headers={"Content-Type": "application/json"}
     )
     try:
         with urllib.request.urlopen(request, timeout=3) as response:
-            return json.loads(response.read()).get("ok") is True
+            answer = json.loads(response.read())
     except (OSError, ValueError, urllib.error.URLError):
-        return False
+        return "refused"
+    if not isinstance(answer, dict) or answer.get("ok") is not True:
+        return "refused"
+    return "handled" if answer.get("handled") is True else "stay"
 
 
 def show_window(url: str) -> None:
-    """A window on the program: its own (Edge or Chrome), else the default browser."""
+    """A window on the program, opened by this process: its own (Edge or Chrome), else the default browser. Only for a
+    running copy that cannot open one itself; a window opened here is not tied to that copy."""
     if open_window(url) is None:
         webbrowser.open(url)
+
+
+def update_running() -> bool:
+    """Is an update being installed? The installer cannot replace a program that is running, so none may be started."""
+    from app import updater
+
+    return updater.update_running(paths.data_dir() / updater.UPDATES_FOLDER)
+
+
+def wait_for_update(*, updating=None, clock=time.monotonic, sleep=time.sleep, patience: float | None = None) -> bool:
+    """While an update is being installed nothing is started: the installer replaces the program's file, which a running
+    program holds, and it gives up when it cannot (that is what a user who opened CheapTrader again, because nothing was
+    showing, did to the update). The script that installs it opens the program when it is done. True: this start waited.
+    A start that waited only opens a window when none is showing: the script's start and the user's would otherwise
+    open one each, next to the one the update left open."""
+    updating = updating or update_running
+    patience = START_TIMEOUT if patience is None else patience
+    began = clock()
+    waited = False
+    while updating() and clock() - began < patience:
+        waited = True
+        sleep(0.5)
+    return waited
 
 
 def lead_or_join(
@@ -373,7 +418,9 @@ def lead_or_join(
     alive=None,
     ask=None,
     show=None,
+    shown=None,
     warn=None,
+    unless_shown: bool = False,
     clock=time.monotonic,
     sleep=time.sleep,
     patience: float | None = None,
@@ -384,21 +431,28 @@ def lead_or_join(
     window has been opened on it; or it never came up in ``patience`` seconds (the user is told). A copy that is ending is waited for:
     when it is gone the lock is free and this start takes it, so the user who closed the program and opened it again
     a moment later gets a program, not a window on one that has just stopped (and not a start that does nothing).
+
+    ``unless_shown``: the window is only opened when none is showing (a start of an update, or one that waited for it).
     """
     acquire = acquire or acquire_singleton
     port_of = port_of or running_port
     alive = alive or health
-    ask = ask or ask_to_stay
+    ask = ask or ask_for_window
     show = show or show_window
+    shown = shown or app_window_open
     warn = warn or (lambda text: message(text, error=True))
     patience = START_TIMEOUT if patience is None else patience
+    wants_window = "--no-window" not in argv
+    unless_shown = unless_shown or "--reconnect" in argv
     began = clock()
     while not acquire():
         port = port_of()
-        if alive(port) is not None and ask(port):
-            if "--no-window" not in argv:
-                show(f"http://{HOST}:{port}/")
-            return False
+        if alive(port) is not None:
+            answer = ask(port, open_one=wants_window, unless_shown=unless_shown)
+            if answer != "refused":
+                if answer == "stay" and wants_window and not (unless_shown and shown(port)):
+                    show(f"http://{HOST}:{port}/")
+                return False
         if clock() - began > patience:
             if "--no-window" not in argv:
                 warn(
@@ -408,6 +462,23 @@ def lead_or_join(
             return False
         sleep(0.3)
     return True
+
+
+def answer_window_request(life: Lifetime, *, open_one: bool, unless_shown: bool, showing: bool, open_now) -> dict:
+    """What the running copy says to a second start that wants a window onto it (``POST /api/app/window``).
+
+    ``ok`` false: this copy is ending, no window may be opened on it. Otherwise the copy stays for the window (see
+    ``Lifetime``) and, when asked to, opens it itself with ``open_now``: its windows are then processes of its job and end
+    with it. ``showing`` says whether a window is already showing (or has just been opened, and is still loading); with
+    ``unless_shown`` the copy opens none then. ``handled`` tells the second start that it has nothing left to do.
+    """
+    if not life.expect_window():
+        return {"ok": False}
+    if not open_one:
+        return {"ok": True}
+    if not (unless_shown and showing):
+        open_now()
+    return {"ok": True, "handled": True}
 
 
 def port_file() -> Path:
@@ -435,7 +506,8 @@ def run(argv: list[str] | None = None) -> int:
         sys.stdout = open(os.devnull, "w")
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
-    if not lead_or_join(argv):  # another copy has the lock: a window onto it, or nothing (and not a word in its log)
+    waited = wait_for_update()  # an update is being installed: this start comes after it
+    if not lead_or_join(argv, unless_shown=waited):  # another copy has the lock: a window onto it, or nothing (and not a word in its log)
         return 0
     if "--console" in argv:
         attach_console()
@@ -464,10 +536,36 @@ def run(argv: list[str] | None = None) -> int:
         lifetime.end()  # no window may be opened on it from here on
         server.should_exit = True
 
-    # the page's Quit button (MetaTrader menu) stops the program, and its window with it; a second start announces its window
+    def hand_over_now() -> None:
+        """An update closes the program, and its window stays open meanwhile: the new version finds it by itself."""
+        window_job.release()
+        quit_now()
+
+    window_lock = threading.Lock()
+    last_window = [float("-inf")]  # when this program last opened a window
+
+    def open_here() -> None:
+        """A window onto this program, started by this program: it is a process of its job."""
+        last_window[0] = time.monotonic()
+
+        def show() -> None:
+            if open_window(url, window_job) is None:
+                webbrowser.open(url)
+
+        threading.Thread(target=show, name="open-window", daemon=True).start()
+
+    def window_asked(open_one: bool = False, unless_shown: bool = False) -> dict:
+        with window_lock:  # two starts that ask at once (an update's and a user's) are told about each other's window
+            showing = app_window_open(port) or time.monotonic() - last_window[0] < EXPECT_WINDOW_FOR
+            return answer_window_request(
+                lifetime, open_one=open_one, unless_shown=unless_shown, showing=showing, open_now=open_here
+            )
+
+    # the page's Quit button (MetaTrader menu) stops the program, and its window with it; a second start asks for its window
     terminal_routes.quit_hook = quit_now
+    terminal_routes.update_hook = hand_over_now
     terminal_routes.window_closer = lambda: close_windows(port)
-    terminal_routes.window_hook = lifetime.expect_window
+    terminal_routes.window_hook = window_asked
 
     began = time.monotonic()
     while health(port) is None:
@@ -482,14 +580,19 @@ def run(argv: list[str] | None = None) -> int:
         thread.join()
         return 0
 
-    if "--reconnect" in argv and window_returns(port):
-        # Started by an update (see app/updater.py): the window of the version that was replaced is still open,
-        # and its page reloads by itself as soon as this server answers. Opening another would make two.
+    after_update = "--reconnect" in argv or waited
+    if after_update and window_returns(port, within=8.0 if "--reconnect" in argv else 1.5):
+        # Started by an update (see app/updater.py), or by a user while it was installed: the window of the version that
+        # was replaced is still open, and its page reloads by itself as soon as this server answers. Opening another
+        # would make two.
         logger.info("the window of the previous version is still open and reconnects by itself")
         wait_until_closed(port, thread.is_alive, expecting=lifetime.expecting, end=lifetime.may_end)
         return stop(server, thread, port)
 
-    if open_window(url) is None:
+    with window_lock:
+        last_window[0] = time.monotonic()
+        opened = open_window(url, window_job)
+    if opened is None:
         # No Edge or Chrome: the default browser. There is no window of ours to watch then, so the
         # program runs until the Quit button in the page (or Task Manager) ends it.
         webbrowser.open(url)
@@ -511,4 +614,7 @@ def stop(server, thread: threading.Thread, port: int) -> int:
     lifetime.end()
     server.should_exit = True
     thread.join(timeout=40)
+    # The program ends in the way it means to: what is left of the browser stays (it may show a page the user opened from
+    # here and is using). Only a program that is ended by force takes its windows with it: the job does that.
+    window_job.end()
     return 0

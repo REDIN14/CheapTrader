@@ -2,6 +2,23 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## 0.2.2 — a window that cannot outlive the program, and an update nobody can break
+
+* **Ending CheapTrader in Task Manager no longer leaves its window behind.** *End task* on CheapTrader ended the program
+  but not its window, which went on showing the last chart with nothing behind it; reloading it gave *127.0.0.1
+  refused the connection*. The windows are now tied to the program (a Windows job object): when the program ends,
+  however it ends, the system ends them with it. To make that hold for every window, the running program opens
+  them itself, also the second one when CheapTrader is opened again while it runs. Ending only the window (Task
+  Manager, or *Task beenden* in the taskbar menu) was already fine: the program follows a few seconds later, and
+  opening it again right away works.
+* **Opening CheapTrader by hand while an update installs no longer breaks the update.** The installer cannot replace a
+  program that is running. A start by hand during the few seconds it takes made it give up (exit code 5): the old
+  version came back and nothing was updated. A start now waits until the installer is done, and when the program is
+  open again there is one window, not two or three. The script that installs an update comes from the version that is
+  being replaced, so this starts to help with the update after the one that installs 0.2.2.
+* The window no longer offers to translate the page (Edge asked on a PC whose language is not English).
+* After a window was ended by force, Edge no longer asks in the window whether to restore pages.
+
 ## 0.2.1 — opening the program again right after closing it
 
 * **No more "this page is not reachable".** Closing CheapTrader and opening it again within a few seconds could leave

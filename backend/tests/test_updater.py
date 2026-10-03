@@ -33,6 +33,7 @@ from app.updater import (
     parse_version,
     ps_quote,
     release_from_json,
+    update_running,
 )
 
 REPO = "someone/CheapTrader"
@@ -484,7 +485,10 @@ def test_the_launch_runs_a_script_and_then_closes_the_program(tmp_path, monkeypa
     script = call["cmd"][-1]
     assert "O''Brien''s CheapTrader" in script  # a quote in a path is doubled, not left to end the string
     assert "CheapTrader-0.2.0-setup.exe" in script and "'/SILENT'" in script and "'--reconnect'" in script
-    assert script.splitlines()[0].startswith("Set-Content -LiteralPath") and updater_module.STARTED_NOTE in script.splitlines()[0]
+    lines = script.splitlines()
+    lock_at = next(i for i, line in enumerate(lines) if updater_module.LOCK_NOTE in line)
+    started_at = next(i for i, line in enumerate(lines) if updater_module.STARTED_NOTE in line and line.startswith("Set-Content"))
+    assert lock_at < started_at <= 3  # the lock is held before the program is told that the script runs, and both come first
     assert call["cwd"] == str(folder)
     # The program it opens again must unpack itself: with these it would look for the temporary files of the one
     # that has just closed, find them gone, and stop with "Failed to load Python DLL".
@@ -550,6 +554,8 @@ using System.Reflection;
 class Stub {
   static int Main(string[] args) {
     File.WriteAllText(Assembly.GetExecutingAssembly().Location + ".log", string.Join("|", args));
+    int pause;
+    if (int.TryParse(Environment.GetEnvironmentVariable("STUB_SLEEP"), out pause)) System.Threading.Thread.Sleep(pause);
     int code;
     return int.TryParse(Environment.GetEnvironmentVariable("STUB_EXIT"), out code) ? code : 0;
   }
@@ -625,6 +631,83 @@ def test_a_failing_installer_is_noted_and_the_program_is_still_opened(tmp_path, 
     exe, setup, result = run_script(tmp_path, stub_exe, installer_exit=5)
     assert json.loads(result.read_text(encoding="utf-8-sig"))["exit_code"] == 5
     assert exe.with_name(exe.name + ".log").read_text() == "--reconnect"  # whatever is installed is opened, so the user is not left with nothing
+
+
+# -- the lock that keeps the program from being started while the installer runs ----------------------------------------
+def hold_exclusively(path: Path):
+    """Open a file with no sharing at all, as the script does; returns a function that lets go."""
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = ctypes.c_void_p
+    kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    handle = kernel32.CreateFileW(str(path), 0xC0000000, 0, None, 4, 0x80, None)  # read+write, shared with nobody, create if missing
+    assert handle not in (None, ctypes.c_void_p(-1).value), "the lock file could not be opened"
+    return lambda: kernel32.CloseHandle(handle)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a Windows lock")
+def test_a_lock_that_nobody_holds_is_no_update_in_progress(tmp_path) -> None:
+    assert not update_running(tmp_path)  # no file at all
+    (tmp_path / updater_module.LOCK_NOTE).write_text("")
+    assert not update_running(tmp_path)  # a file that an earlier update left behind
+    assert not update_running(tmp_path / "no such folder")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a Windows lock")
+def test_a_lock_that_is_held_is_an_update_in_progress(tmp_path) -> None:
+    let_go = hold_exclusively(tmp_path / updater_module.LOCK_NOTE)
+    try:
+        assert update_running(tmp_path)
+    finally:
+        let_go()
+    assert not update_running(tmp_path)  # and the moment it is let go (or its holder is killed) nothing waits any more
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a Windows lock")
+def test_a_start_of_the_program_looks_for_the_lock_in_its_data_folder(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import desktop
+
+    monkeypatch.setattr(desktop.paths, "data_dir", lambda: tmp_path)
+    (tmp_path / updater_module.UPDATES_FOLDER).mkdir()
+    assert not desktop.update_running()
+    let_go = hold_exclusively(tmp_path / updater_module.UPDATES_FOLDER / updater_module.LOCK_NOTE)
+    try:
+        assert desktop.update_running()
+    finally:
+        let_go()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell")
+def test_the_script_holds_the_lock_for_as_long_as_it_runs(tmp_path, stub_exe) -> None:
+    exe, setup = tmp_path / "CheapTrader.exe", tmp_path / "CheapTrader-0.2.0-setup.exe"
+    shutil.copy(stub_exe, exe)
+    shutil.copy(stub_exe, setup)
+    folder = tmp_path / "updates"
+    folder.mkdir()
+    started = folder / updater_module.STARTED_NOTE
+    script = install_script(exe, setup, folder / "update-result.json", "0.2.0", started, folder / updater_module.LOCK_NOTE)
+    assert not update_running(folder)
+    process = subprocess.Popen(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        env={**os.environ, "STUB_SLEEP": "4000"},  # the installer takes four seconds
+        cwd=str(tmp_path),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 60
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert started.exists()
+        assert update_running(folder), "the script said it had started but does not hold the lock"
+        process.wait(timeout=120)
+        assert not update_running(folder)  # done: whoever starts the program now is not kept waiting
+    finally:
+        if process.poll() is None:
+            process.kill()
 
 
 # -- how the last install went ------------------------------------------------------------------------------------

@@ -42,7 +42,8 @@ window stops the program. The first time, the welcome tour opens by itself.
 When a newer release is on GitHub, an **Update** button appears at the top of the window. Click it to read what
 is new. **Install and restart** downloads the installer, checks it against the published checksum, closes
 CheapTrader, installs and opens it again. Your data folder is not touched. A portable copy (the zip) cannot
-install itself: the button then opens the release page.
+install itself: the button then opens the release page. Leave CheapTrader alone while it installs (about half a
+minute): it comes back by itself, and opening it yourself in the middle can make the installer give up.
 
 ---
 
@@ -150,5 +151,5 @@ price, so the result is not lost.
 | It cannot find MetaTrader though it is installed | start MetaTrader once by hand and log in; then reopen the tour. A portable install must be running to be found |
 | The prices are late | the MetaTrader menu or the dot next to the chart title says whether MetaTrader is busy |
 | A drawing cannot be moved or deleted | it is locked: press the padlock in its bar |
-| The window says "this page is not reachable" (connection refused) | CheapTrader is not running: its window can only show the program while the program is open. Close that window and open CheapTrader from the Start menu. (Closing the program and opening it again at once is fine: the new start waits for the old one to end.) |
+| The window says "this page is not reachable" (connection refused) | CheapTrader is not running: its window can only show the program while the program is open. Close that window and open CheapTrader from the Start menu. (Closing the program and opening it again at once is fine: the new start waits for the old one to end. Ending CheapTrader in Task Manager closes its window too.) |
 | Something else | the program writes a log to `data\logs` next to it. Report problems on the project page (About, *Report a problem*) and attach the last lines |

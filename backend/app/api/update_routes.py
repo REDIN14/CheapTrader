@@ -44,7 +44,7 @@ def update_check() -> dict:
 def update_install() -> dict:
     """Start installing. The answer comes at once; the page follows the progress with ``GET /api/update``."""
     try:
-        return get_state().updater.install(terminal_routes.quit_hook)
+        return get_state().updater.install(terminal_routes.update_hook or terminal_routes.quit_hook)
     except UpdateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

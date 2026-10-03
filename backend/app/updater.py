@@ -12,7 +12,9 @@ What it does, and what it never does
   SHA-256 is compared with the line for that file in the release's ``SHA256SUMS.txt``, and only then is it run:
   silently, after this program has closed. A small PowerShell script does that, because the program cannot wait
   for its own exit: it waits until ``CheapTrader.exe`` can be written to, runs the installer, records how that
-  went and opens the program again. The installer replaces the program and leaves the data folder alone. The script
+  went and opens the program again. The installer replaces the program and leaves the data folder alone. While the
+  script runs it holds a lock file, and a start of the program waits for it: a program that runs would keep the
+  installer from replacing it (the user who opens CheapTrader again because nothing is showing is the usual cause). The script
   is started without the variables the one-file program's bootloader left in this process's environment
   (``procutil.fresh_start_environment``): the program it opens must unpack itself, not look for the temporary files
   of this one, which are gone by then.
@@ -82,6 +84,24 @@ RELAUNCH_ARGS = ("--reconnect",)
 STARTED_NOTE = "update-started.flag"
 #: How long the script is given to show that it is running.
 SCRIPT_START_WITHIN = 20.0
+#: The folder (in the data folder) that the files of an update are in.
+UPDATES_FOLDER = "updates"
+#: What the script holds open, and locked, for as long as it runs. The installer cannot replace the program while a
+#: copy of it runs, and gives up (exit code 5) when it cannot; a user who starts the program again meanwhile (it has
+#: closed, and nothing else is showing) did exactly that. A start finds this lock held and waits (``update_running``).
+LOCK_NOTE = "installing.lock"
+
+
+def update_running(folder: Path) -> bool:
+    """Is the script that installs an update running? It holds ``installing.lock`` in ``folder`` for as long as it does.
+    A lock that nobody holds is not mistaken for one that is: the system lets go of it when the script ends, however."""
+    try:
+        with (Path(folder) / LOCK_NOTE).open("r+b"):
+            return False
+    except PermissionError:  # someone holds it, and shares it with nobody
+        return True
+    except OSError:  # there is no such file: no update has been run
+        return False
 
 
 class UpdateError(Exception):
@@ -175,12 +195,21 @@ def ps_quote(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def install_script(exe: Path, setup: Path, result: Path, version: str, started: Path | None = None) -> str:
+def install_script(exe: Path, setup: Path, result: Path, version: str, started: Path | None = None, lock: Path | None = None) -> str:
     """The script that runs the installer once the program has closed (see the module's docstring).
-    The file named by started is written first of all, to show that the script is running."""
+    The file named by lock is held, locked, for as long as the script runs, and the file named by started is written
+    first of all, to show that the script is running (so, once that is seen, the lock is held)."""
     args = ",".join(ps_quote(a) for a in INSTALLER_ARGS)
     relaunch = ",".join(ps_quote(a) for a in RELAUNCH_ARGS)
-    first = [f"Set-Content -LiteralPath {ps_quote(str(started))} -Value '1'"] if started else []
+    hold = (
+        [
+            "$lock = $null",
+            f"try {{ $lock = [System.IO.File]::Open({ps_quote(str(lock))}, 'OpenOrCreate', 'ReadWrite', 'None') }} catch {{ }}",
+        ]
+        if lock
+        else []
+    )
+    first = [*hold, *([f"Set-Content -LiteralPath {ps_quote(str(started))} -Value '1'"] if started else [])]
     return "\n".join(
         [
             *first,
@@ -200,6 +229,7 @@ def install_script(exe: Path, setup: Path, result: Path, version: str, started: 
             "Set-Content -LiteralPath $result -Value $json -Encoding UTF8",
             "Remove-Item -LiteralPath $setup -Force -ErrorAction SilentlyContinue",
             f"Start-Process -FilePath $exe -ArgumentList {relaunch}",
+            "if ($lock) { $lock.Close() }",
         ]
     )
 
@@ -261,7 +291,7 @@ class Updater:
     # -- where things are ----------------------------------------------------------------------
     def folder(self) -> Path:
         base = self._data_dir() if self._data_dir else paths.data_dir()
-        return Path(base) / "updates"
+        return Path(base) / UPDATES_FOLDER
 
     def _result_file(self) -> Path:
         return self.folder() / "update-result.json"
@@ -475,7 +505,7 @@ class Updater:
         exe = Path(paths.app_dir()) / "CheapTrader.exe"
         started = self.folder() / STARTED_NOTE
         started.unlink(missing_ok=True)
-        script = install_script(exe, setup, self._result_file(), version, started)
+        script = install_script(exe, setup, self._result_file(), version, started, self.folder() / LOCK_NOTE)
         with self._lock:
             self._phase, self._message = "installing", f"Closing CheapTrader to install {version}."
         # -Command takes the script as text, so it does not matter that Windows may forbid running .ps1 files

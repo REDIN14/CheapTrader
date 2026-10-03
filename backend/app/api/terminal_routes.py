@@ -35,8 +35,11 @@ router = APIRouter(prefix="/api", tags=["terminal"])
 quit_hook: Callable[[], None] | None = None
 #: Set by the packaged program: closes its window (Quit ends the program, so its window goes too).
 window_closer: Callable[[], None] | None = None
-#: Set by the packaged program: a window is about to open on this copy. True: it stays for it; False: it is ending.
-window_hook: Callable[[], bool] | None = None
+#: Set by the packaged program: a second start wants a window onto this copy: ``window_hook(open_one, unless_shown)``
+#: answers ``{"ok": ...}`` (False: this copy is ending), and ``handled`` when it opened the window itself.
+window_hook: Callable[[bool, bool], dict] | None = None
+#: Set by the packaged program: stops it for an update (its window stays open meanwhile; see ``quit_hook``).
+update_hook: Callable[[], None] | None = None
 
 _scan: tuple[float, list[terminals.Terminal]] = (0.0, [])
 SCAN_TTL = 10.0
@@ -143,11 +146,22 @@ def terminal_choose(request: ChooseRequest) -> dict:
     return _status()
 
 
+class WindowAsked(BaseModel):
+    #: Open the window from here (a window that this copy opens ends with it). Otherwise only stay for one.
+    open: bool = False
+    #: Open none if a window is showing already (the start of an update, and a user's meanwhile, would make two).
+    unless_shown: bool = False
+
+
 @router.post("/app/window")
-def window_expected() -> dict:
-    """A second start of the program found this copy running and is about to open a window on it. ``ok`` false: this copy
-    is ending, so no window may be opened on it (the second start waits for it to end and starts afresh)."""
-    return {"ok": True if window_hook is None else bool(window_hook())}
+def window_expected(asked: WindowAsked | None = None) -> dict:
+    """A second start of the program found this copy running and wants a window onto it. ``ok`` false: this copy
+    is ending, so no window may be opened on it (the second start waits for it to end and starts afresh). ``handled``:
+    the window was opened from here, there is nothing left for the second start to do."""
+    asked = asked or WindowAsked()
+    if window_hook is None:
+        return {"ok": True}  # the development server: nothing ends it by itself, and it opens no windows
+    return window_hook(asked.open, asked.unless_shown)
 
 
 @router.post("/app/quit")

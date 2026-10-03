@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from app import desktop
 from app.api import terminal_routes
-from app.desktop import Lifetime, acquire_singleton, ask_to_stay, lead_or_join, wait_until_closed
+from app.desktop import Lifetime, acquire_singleton, answer_window_request, ask_for_window, lead_or_join, wait_until_closed
 
 
 class Clock:
@@ -166,20 +166,23 @@ def test_a_window_announced_at_the_last_moment_stops_the_program_from_ending() -
 
 # -- a second start -------------------------------------------------------------------------------------------------------
 class Scene:
-    """The other copy of the program, as a second start sees it."""
+    """The other copy of the program, as a second start sees it. ``agrees`` is what it answers when asked for a window:
+    True, "handled" (it opened the window itself), "stay" (an older copy: it only stays, this start opens the window)
+    or False, "refused" (it is ending)."""
 
-    def __init__(self, locks: list[bool], up: list[bool], agrees: list[bool]) -> None:
+    def __init__(self, locks: list[bool], up: list[bool], agrees: list, window_showing: bool = False) -> None:
         self.clock = Clock()
         self._locks, self._up, self._agrees = locks, up, agrees
+        self._window_showing = window_showing
         self.windows: list[str] = []
-        self.asked: list[int] = []
+        self.asked: list[tuple[int, bool, bool]] = []
         self.tries = 0
 
     @staticmethod
-    def _next(items: list[bool]) -> bool:
+    def _next(items: list):
         return items.pop(0) if len(items) > 1 else items[0]
 
-    def lead(self, argv: list[str] | None = None, patience: float = 180.0) -> bool:
+    def lead(self, argv: list[str] | None = None, patience: float = 180.0, unless_shown: bool = False) -> bool:
         self.warnings: list[str] = []
 
         def acquire() -> bool:
@@ -189,9 +192,10 @@ class Scene:
         def alive(_port: int):
             return {"broker": "mock"} if self._next(self._up) else None
 
-        def ask(port: int) -> bool:
-            self.asked.append(port)
-            return self._next(self._agrees)
+        def ask(port: int, *, open_one: bool, unless_shown: bool) -> str:
+            self.asked.append((port, open_one, unless_shown))
+            answer = self._next(self._agrees)
+            return {True: "handled", False: "refused"}.get(answer, answer)
 
         return lead_or_join(
             argv or [],
@@ -200,7 +204,9 @@ class Scene:
             alive=alive,
             ask=ask,
             show=self.windows.append,
+            shown=lambda _port: self._window_showing,
             warn=self.warnings.append,
+            unless_shown=unless_shown,
             clock=self.clock,
             sleep=self.clock.sleep,
             patience=patience,
@@ -213,16 +219,70 @@ def test_the_first_start_is_the_program() -> None:
     assert scene.windows == [] and scene.asked == []
 
 
-def test_a_second_start_asks_the_running_copy_to_stay_and_opens_a_window_on_it() -> None:
+def test_a_second_start_asks_the_running_copy_for_a_window_and_the_copy_opens_it() -> None:
     scene = Scene(locks=[False], up=[True], agrees=[True])
     assert scene.lead() is False
-    assert scene.asked == [8765] and scene.windows == ["http://127.0.0.1:8765/"]
+    # the window is the running copy's own (so it ends with it): this start opens nothing
+    assert scene.asked == [(8765, True, False)] and scene.windows == []
 
 
-def test_a_second_start_without_a_window_opens_none() -> None:
-    scene = Scene(locks=[False], up=[True], agrees=[True])
+def test_an_older_copy_only_stays_and_this_start_opens_the_window() -> None:
+    scene = Scene(locks=[False], up=[True], agrees=["stay"])
+    assert scene.lead() is False
+    assert scene.windows == ["http://127.0.0.1:8765/"]
+
+
+def test_a_second_start_without_a_window_asks_only_for_the_copy_to_stay() -> None:
+    scene = Scene(locks=[False], up=[True], agrees=["stay"])
     assert scene.lead(["--no-window"]) is False
-    assert scene.asked == [8765] and scene.windows == []
+    assert scene.asked == [(8765, False, False)] and scene.windows == []
+
+
+# -- an update is being installed -----------------------------------------------------------------------------------------------
+def test_a_start_while_an_update_is_installed_waits_for_it() -> None:
+    clock = Clock()
+    answers = [True, True, True, False]  # three looks at the installer running, then it is done
+    assert desktop.wait_for_update(updating=lambda: answers.pop(0), clock=clock, sleep=clock.sleep) is True
+    assert answers == [] and 1.0 <= clock.now <= 2.0
+
+
+def test_a_start_when_no_update_is_installed_does_not_wait() -> None:
+    clock = Clock()
+    assert desktop.wait_for_update(updating=lambda: False, clock=clock, sleep=clock.sleep) is False
+    assert clock.now == 0.0
+
+
+def test_a_start_that_waited_for_an_update_only_opens_a_window_when_none_is_showing() -> None:
+    scene = Scene(locks=[False], up=[True], agrees=[True])
+    assert scene.lead(unless_shown=True) is False
+    assert scene.asked == [(8765, True, True)]  # the running copy is asked to open none if one is showing
+
+
+def test_the_start_that_an_update_makes_opens_no_second_window_either() -> None:
+    scene = Scene(locks=[False], up=[True], agrees=[True])
+    assert scene.lead(["--reconnect"]) is False
+    assert scene.asked == [(8765, True, True)]
+
+
+def test_an_older_copy_is_not_given_a_second_window_when_one_is_showing() -> None:
+    scene = Scene(locks=[False], up=[True], agrees=["stay"], window_showing=True)
+    assert scene.lead(["--reconnect"]) is False
+    assert scene.windows == []
+    scene = Scene(locks=[False], up=[True], agrees=["stay"], window_showing=False)
+    assert scene.lead(["--reconnect"]) is False
+    assert scene.windows == ["http://127.0.0.1:8765/"]
+
+
+def test_a_second_start_that_is_no_update_opens_its_window_even_when_one_is_showing() -> None:
+    scene = Scene(locks=[False], up=[True], agrees=["stay"], window_showing=True)
+    assert scene.lead() is False
+    assert scene.windows == ["http://127.0.0.1:8765/"]  # a second double-click is a second window, as it always was
+
+
+def test_an_update_that_never_ends_does_not_keep_a_start_for_ever() -> None:
+    clock = Clock()
+    assert desktop.wait_for_update(updating=lambda: True, clock=clock, sleep=clock.sleep, patience=20.0) is True
+    assert 20.0 <= clock.now <= 21.0
 
 
 def test_a_copy_that_is_ending_is_waited_for_and_the_second_start_becomes_the_program() -> None:
@@ -230,14 +290,14 @@ def test_a_copy_that_is_ending_is_waited_for_and_the_second_start_becomes_the_pr
     scene = Scene(locks=[False, False, False, True], up=[True, False, False], agrees=[False])
     assert scene.lead() is True
     assert scene.windows == []  # never a window on a program that is ending
-    assert scene.asked == [8765]
+    assert scene.asked == [(8765, True, False)]
     assert 0.5 <= scene.clock.now <= 1.2  # a moment, not minutes
 
 
 def test_a_copy_that_is_still_starting_is_waited_for() -> None:
     scene = Scene(locks=[False], up=[False, False, True], agrees=[True])
     assert scene.lead() is False
-    assert scene.windows == ["http://127.0.0.1:8765/"]
+    assert scene.asked == [(8765, True, False)]  # it was asked only once it answered
     assert 0.5 <= scene.clock.now <= 1.0
 
 
@@ -276,7 +336,8 @@ def test_a_start_that_found_the_lock_taken_does_not_keep_it_alive(monkeypatch) -
 def serve(body: bytes, seen: list[str]):
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
-            seen.append(f"{self.command} {self.path}")
+            sent = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            seen.append(f"{self.command} {self.path} {sent.decode()}")
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -292,14 +353,34 @@ def serve(body: bytes, seen: list[str]):
 
 @pytest.mark.parametrize(
     "body,expected",
-    [(b'{"ok": true}', True), (b'{"ok": false}', False), (b"not json", False), (b"{}", False)],
+    [
+        (b'{"ok": true, "handled": true}', "handled"),  # it opened the window itself
+        (b'{"ok": true}', "stay"),  # an older copy: it stays, the window is the asker's to open
+        (b'{"ok": false}', "refused"),
+        (b"not json", "refused"),
+        (b"{}", "refused"),
+        (b"[]", "refused"),
+    ],
 )
-def test_the_running_copy_is_asked_to_stay_and_says_yes_or_no(body: bytes, expected: bool) -> None:
+def test_the_running_copy_is_asked_for_a_window_and_the_answer_is_read(body: bytes, expected: str) -> None:
     seen: list[str] = []
     server = serve(body, seen)
     try:
-        assert ask_to_stay(server.server_address[1]) is expected
-        assert seen == ["POST /api/app/window"]
+        assert ask_for_window(server.server_address[1]) == expected
+        assert seen == ['POST /api/app/window {"open": true, "unless_shown": false}']
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_what_the_second_start_asks_for_goes_with_the_request() -> None:
+    seen: list[str] = []
+    server = serve(b'{"ok": true}', seen)
+    try:
+        port = server.server_address[1]
+        ask_for_window(port, open_one=False)
+        ask_for_window(port, unless_shown=True)
+        assert [s.split(" ", 2)[2] for s in seen] == ['{"open": false, "unless_shown": false}', '{"open": true, "unless_shown": true}']
     finally:
         server.shutdown()
         server.server_close()
@@ -309,7 +390,40 @@ def test_a_copy_that_does_not_answer_has_not_agreed() -> None:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    assert ask_to_stay(port) is False  # nothing listens there
+    assert ask_for_window(port) == "refused"  # nothing listens there
+
+
+# -- what the running copy answers ------------------------------------------------------------------------------------------------
+def test_a_copy_that_is_ending_refuses_and_opens_no_window() -> None:
+    life = Lifetime(Clock())
+    life.end()
+    opened: list[bool] = []
+    answer = answer_window_request(life, open_one=True, unless_shown=False, showing=False, open_now=lambda: opened.append(True))
+    assert answer == {"ok": False} and opened == []
+
+
+def test_a_copy_opens_the_window_itself_when_asked_to() -> None:
+    life = Lifetime(Clock())
+    opened: list[bool] = []
+    answer = answer_window_request(life, open_one=True, unless_shown=False, showing=True, open_now=lambda: opened.append(True))
+    assert answer == {"ok": True, "handled": True} and opened == [True]  # a second window, though one is showing
+    assert life.expecting()  # and it stays for it
+
+
+def test_a_copy_opens_none_when_asked_to_leave_it_be_and_one_is_showing() -> None:
+    life = Lifetime(Clock())
+    opened: list[bool] = []
+    answer = answer_window_request(life, open_one=True, unless_shown=True, showing=True, open_now=lambda: opened.append(True))
+    assert answer == {"ok": True, "handled": True} and opened == []
+    answer = answer_window_request(life, open_one=True, unless_shown=True, showing=False, open_now=lambda: opened.append(True))
+    assert answer == {"ok": True, "handled": True} and opened == [True]
+
+
+def test_a_copy_that_is_only_asked_to_stay_opens_nothing() -> None:
+    life = Lifetime(Clock())
+    opened: list[bool] = []
+    answer = answer_window_request(life, open_one=False, unless_shown=False, showing=False, open_now=lambda: opened.append(True))
+    assert answer == {"ok": True} and opened == [] and life.expecting()
 
 
 # -- the routes -----------------------------------------------------------------------------------------------------------------
@@ -318,7 +432,7 @@ def client(monkeypatch):
     monkeypatch.setenv("CT_BROKER", "mock")
     from app.main import app
 
-    for hook in ("quit_hook", "window_closer", "window_hook"):
+    for hook in ("quit_hook", "update_hook", "window_closer", "window_hook"):
         monkeypatch.setattr(terminal_routes, hook, None)
     with TestClient(app) as c:
         yield c
@@ -326,15 +440,46 @@ def client(monkeypatch):
 
 def test_a_window_is_accepted_when_nothing_closes_the_program_by_itself(client) -> None:
     assert client.post("/api/app/window").json() == {"ok": True}  # the development server
+    assert client.post("/api/app/window", json={"open": True, "unless_shown": True}).json() == {"ok": True}
 
 
 def test_the_program_says_yes_or_no_to_a_window(client, monkeypatch) -> None:
     life = Lifetime(Clock())
-    monkeypatch.setattr(terminal_routes, "window_hook", life.expect_window)
-    assert client.post("/api/app/window").json() == {"ok": True}
-    assert life.expecting()
+    opened: list[bool] = []
+
+    def hook(open_one: bool, unless_shown: bool) -> dict:
+        return answer_window_request(life, open_one=open_one, unless_shown=unless_shown, showing=False, open_now=lambda: opened.append(True))
+
+    monkeypatch.setattr(terminal_routes, "window_hook", hook)
+    assert client.post("/api/app/window", json={}).json() == {"ok": True}  # what a copy that was started by 0.2.1 sends
+    assert life.expecting() and opened == []
+    assert client.post("/api/app/window", json={"open": True, "unless_shown": False}).json() == {"ok": True, "handled": True}
+    assert opened == [True]
     life.end()
-    assert client.post("/api/app/window").json() == {"ok": False}
+    assert client.post("/api/app/window", json={"open": True}).json() == {"ok": False}
+    assert opened == [True]  # never a window on a copy that is ending
+
+
+def test_an_update_closes_the_program_the_way_that_keeps_its_window(client, monkeypatch) -> None:
+    """The update's hook lets the window go on (see ``WindowJob.release``); Quit's does not."""
+    from app.state import get_state
+
+    updater = get_state().updater
+    status = updater.status()
+    closed_with: list = []
+    monkeypatch.setattr(updater, "install", lambda quit_app: closed_with.append(quit_app) or status)
+
+    def quit_hook() -> None: ...
+
+    def update_hook() -> None: ...
+
+    monkeypatch.setattr(terminal_routes, "quit_hook", quit_hook)
+    monkeypatch.setattr(terminal_routes, "update_hook", update_hook)
+    assert client.post("/api/update/install").status_code == 200
+    assert closed_with == [update_hook]  # not the plain quit
+    monkeypatch.setattr(terminal_routes, "update_hook", None)  # the development server
+    assert client.post("/api/update/install").status_code == 200
+    assert closed_with == [update_hook, quit_hook]
 
 
 def test_quit_closes_the_window_and_then_the_program(client, monkeypatch) -> None:
