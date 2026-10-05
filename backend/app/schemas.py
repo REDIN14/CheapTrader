@@ -253,13 +253,27 @@ class ModifyOrderRequest(BaseModel):
 class IndicatorSpec(BaseModel):
     """A user-authored Python indicator."""
 
-    id: str
+    #: Empty when one is created (the server gives it its id).
+    id: str = ""
     name: str
     code: str
     overlay: bool = True
     pane: int = 0
     params: dict[str, Any] = Field(default_factory=dict)
+    #: A built-in's parameters as it comes (``params`` are the ones the user set); None for the user's own indicators.
+    defaults: dict[str, Any] | None = None
     created_at: datetime | None = None
+
+
+class IndicatorUpdate(BaseModel):
+    """What ``PUT /api/indicators/{id}`` changes: the fields that are given. (The id is the one in the address; an id
+    in the body is not looked at.) A built-in takes new parameters only: its code, name and kind stay as they come."""
+
+    name: str | None = None
+    code: str | None = None
+    overlay: bool | None = None
+    pane: int | None = None
+    params: dict[str, Any] | None = None
 
 
 class IndicatorResult(BaseModel):
@@ -269,6 +283,8 @@ class IndicatorResult(BaseModel):
     name: str
     overlay: bool
     pane: int
+    #: The parameters it was run with (the chart's legend shows them after the name).
+    params: dict[str, Any] = Field(default_factory=dict)
     plots: list[dict[str, Any]] = Field(default_factory=list)
     #: Shapes the indicator draws on the chart (see ``docs/DRAWINGS.md``), checked against ``app.drawings.Drawing``.
     drawings: list[dict[str, Any]] = Field(default_factory=list)

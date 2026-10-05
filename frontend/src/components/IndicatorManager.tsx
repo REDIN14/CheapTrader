@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { indicatorApi } from "../lib/api";
+import { paramsFromRows, rowsFromParams, sameParams, type ParamRow } from "../lib/indicatorParams";
 import type { IndicatorSpec } from "../lib/types";
 import { BookIcon, CheckIcon, CloseIcon, PlusIcon, SettingsIcon } from "./Icons";
 
@@ -9,6 +10,8 @@ interface Props {
   onChanged: () => void;
   /** Open the documentation (how to write an indicator, and how to draw from one). */
   onDocs: () => void;
+  /** Open the settings of this indicator (the gear of its row in the chart's legend); a new `seq` opens it again. */
+  editRequest?: { id: string; seq: number } | null;
 }
 
 const DEFAULT_CODE = `"""Custom indicator.
@@ -29,32 +32,44 @@ def compute(df, params):
 
 type EditorState = {
   id: string | null;
+  /** A built-in: only its parameters can be changed (its code is part of the program). */
+  builtin: boolean;
   name: string;
   code: string;
   overlay: boolean;
-  params: { key: string; value: string }[];
+  params: ParamRow[];
+  /** A built-in's own parameters, which "Reset to defaults" puts back. */
+  defaults: Record<string, unknown> | null;
 };
 
 const EMPTY_EDITOR: EditorState = {
   id: null,
+  builtin: false,
   name: "",
   code: DEFAULT_CODE,
   overlay: true,
   params: [{ key: "period", value: "14" }],
+  defaults: null,
 };
 
-export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Props) {
+type Message = { text: string; error: boolean };
+
+export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs, editRequest }: Props) {
   const [indicators, setIndicators] = useState<IndicatorSpec[]>([]);
   const [query, setQuery] = useState("");
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
+  // Grows every time the settings open, so they are scrolled into view even when the list is long.
+  const [opened, setOpened] = useState(0);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const handledRequest = useRef(0);
 
   const refresh = async () => {
     try {
       setIndicators(await indicatorApi.list());
     } catch (err) {
-      setMessage((err as Error).message);
+      setMessage({ text: (err as Error).message, error: true });
     }
   };
 
@@ -68,41 +83,63 @@ export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Pro
     return indicators.filter((i) => i.name.toLowerCase().includes(q));
   }, [indicators, query]);
 
-  const openNew = () => {
-    setEditor({ ...EMPTY_EDITOR, params: [{ key: "period", value: "14" }] });
-    setMessage(null);
+  const open = (next: EditorState, note: Message | null = null) => {
+    setEditor(next);
+    setMessage(note);
+    setOpened((n) => n + 1);
   };
 
-  const openEdit = (spec: IndicatorSpec) => {
-    setEditor({
+  const openNew = () => open({ ...EMPTY_EDITOR, params: [{ key: "period", value: "14" }] });
+
+  const openEdit = (spec: IndicatorSpec) =>
+    open({
       id: spec.id,
+      builtin: spec.id.startsWith("builtin."),
       name: spec.name,
       code: spec.code,
       overlay: spec.overlay,
-      params: Object.entries(spec.params ?? {}).map(([key, value]) => ({
-        key,
-        value: String(value),
-      })),
+      params: rowsFromParams(spec.params),
+      defaults: spec.defaults ?? null,
     });
-    setMessage(null);
+
+  // The gear of an indicator's row in the chart's legend opens its settings here.
+  useEffect(() => {
+    if (!editRequest || editRequest.seq === handledRequest.current) return;
+    const spec = indicators.find((s) => s.id === editRequest.id);
+    if (!spec) return; // the list is still on its way: this runs again when it is here
+    handledRequest.current = editRequest.seq;
+    setQuery("");
+    openEdit(spec);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequest, indicators]);
+
+  useEffect(() => {
+    if (opened) editorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [opened]);
+
+  /** A new indicator of the user's own, with this one's code and settings: the way to change a built-in's code. */
+  const copy = () => {
+    if (!editor) return;
+    open(
+      { ...editor, id: null, builtin: false, name: `${editor.name} (copy)`, params: editor.params.map((p) => ({ ...p })), defaults: null },
+      { text: "A copy of your own: change anything, then Create.", error: false },
+    );
   };
 
   const save = async () => {
     if (!editor) return;
     if (!editor.name.trim()) {
-      setMessage("Name is required");
+      setMessage({ text: "Name is required", error: true });
       return;
     }
-    const params: Record<string, unknown> = {};
-    for (const { key, value } of editor.params) {
-      if (!key.trim()) continue;
-      const num = Number(value);
-      params[key.trim()] = value.trim() !== "" && !Number.isNaN(num) ? num : value;
-    }
+    const params = paramsFromRows(editor.params);
     setBusy(true);
     try {
-      if (editor.id) {
+      if (editor.id && editor.builtin) {
+        await indicatorApi.update(editor.id, { params }); // a built-in takes new parameters only
+      } else if (editor.id) {
         await indicatorApi.update(editor.id, {
+          id: editor.id,
           name: editor.name,
           code: editor.code,
           overlay: editor.overlay,
@@ -118,10 +155,11 @@ export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Pro
         });
       }
       setEditor(null);
+      setMessage(null);
       await refresh();
       onChanged();
     } catch (err) {
-      setMessage((err as Error).message);
+      setMessage({ text: (err as Error).message, error: true });
     } finally {
       setBusy(false);
     }
@@ -131,7 +169,7 @@ export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Pro
     try {
       await indicatorApi.remove(id);
     } catch (err) {
-      setMessage((err as Error).message);
+      setMessage({ text: (err as Error).message, error: true });
       return;
     }
     if (editor?.id === id) setEditor(null);
@@ -139,11 +177,13 @@ export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Pro
     onChanged();
   };
 
-  const setParam = (index: number, patch: Partial<{ key: string; value: string }>) => {
+  const setParam = (index: number, patch: Partial<ParamRow>) => {
     if (!editor) return;
     const params = editor.params.map((p, i) => (i === index ? { ...p, ...patch } : p));
     setEditor({ ...editor, params });
   };
+
+  const changedFromDefaults = editor?.builtin && editor.defaults && !sameParams(paramsFromRows(editor.params), editor.defaults);
 
   return (
     <div className="im">
@@ -194,19 +234,30 @@ export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Pro
       </ul>
 
       {editor && (
-        <div className="im-editor">
+        <div className="im-editor" ref={editorRef}>
           <div className="im-editor-head">
-            <span>{editor.id ? "Edit indicator" : "New indicator"}</span>
+            <span>{editor.id ? `Settings: ${editor.name}` : "New indicator"}</span>
             <button className="im-icon" title="Close editor" onClick={() => setEditor(null)}>
               <CloseIcon size={20} />
             </button>
           </div>
+
+          {editor.builtin && (
+            <p className="im-note">
+              A built-in indicator: its parameters can be changed here, its code cannot. To change the code,{" "}
+              <button className="im-link" onClick={copy}>
+                make a copy
+              </button>{" "}
+              of your own.
+            </p>
+          )}
 
           <label className="im-field">
             <span>Name</span>
             <input
               value={editor.name}
               placeholder="e.g. Momentum"
+              readOnly={editor.builtin}
               onChange={(e) => setEditor({ ...editor, name: e.target.value })}
             />
           </label>
@@ -215,6 +266,7 @@ export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Pro
             <input
               type="checkbox"
               checked={editor.overlay}
+              disabled={editor.builtin}
               onChange={(e) => setEditor({ ...editor, overlay: e.target.checked })}
             />
             <span>Overlay on price</span>
@@ -228,43 +280,65 @@ export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Pro
                   <input
                     placeholder="name"
                     value={p.key}
+                    readOnly={editor.builtin}
+                    aria-label="Parameter name"
                     onChange={(e) => setParam(i, { key: e.target.value })}
                   />
                   <input
                     placeholder="value"
                     value={p.value}
+                    aria-label={`Value of ${p.key || "the parameter"}`}
                     onChange={(e) => setParam(i, { value: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void save();
+                    }}
                   />
-                  <button
-                    className="im-icon"
-                    title="Remove parameter"
-                    onClick={() =>
-                      setEditor({
-                        ...editor,
-                        params: editor.params.filter((_, idx) => idx !== i),
-                      })
-                    }
-                  >
-                    <CloseIcon size={18} />
-                  </button>
+                  {editor.builtin ? (
+                    <span />
+                  ) : (
+                    <button
+                      className="im-icon"
+                      title="Remove parameter"
+                      onClick={() =>
+                        setEditor({
+                          ...editor,
+                          params: editor.params.filter((_, idx) => idx !== i),
+                        })
+                      }
+                    >
+                      <CloseIcon size={18} />
+                    </button>
+                  )}
                 </div>
               ))}
-              <button
-                className="im-param-add"
-                onClick={() =>
-                  setEditor({ ...editor, params: [...editor.params, { key: "", value: "" }] })
-                }
-              >
-                + Add parameter
-              </button>
+              {editor.builtin ? (
+                changedFromDefaults && (
+                  <button
+                    className="im-param-add"
+                    onClick={() => setEditor({ ...editor, params: rowsFromParams(editor.defaults) })}
+                  >
+                    Reset to defaults
+                  </button>
+                )
+              ) : (
+                <button
+                  className="im-param-add"
+                  onClick={() =>
+                    setEditor({ ...editor, params: [...editor.params, { key: "", value: "" }] })
+                  }
+                >
+                  + Add parameter
+                </button>
+              )}
             </div>
           </div>
 
           <label className="im-field">
-            <span>Python code</span>
+            <span>{editor.builtin ? "Python code (built in: read only)" : "Python code"}</span>
             <textarea
               className="im-code"
               spellCheck={false}
+              readOnly={editor.builtin}
               value={editor.code}
               onChange={(e) => setEditor({ ...editor, code: e.target.value })}
             />
@@ -274,13 +348,19 @@ export function IndicatorManager({ activeIds, onToggle, onChanged, onDocs }: Pro
             <button className="im-save" disabled={busy} onClick={save}>
               {editor.id ? "Save" : "Create"}
             </button>
+            {editor.id && (
+              <button className="im-cancel" title="A new indicator of your own with this one's code and settings" onClick={copy}>
+                Copy
+              </button>
+            )}
             <button className="im-cancel" onClick={() => setEditor(null)}>
               Cancel
             </button>
           </div>
-          {message && <p className="im-message">{message}</p>}
+          {message && <p className={message.error ? "im-message error" : "im-message"}>{message.text}</p>}
         </div>
       )}
+      {!editor && message?.error && <p className="im-message error">{message.text}</p>}
     </div>
   );
 }

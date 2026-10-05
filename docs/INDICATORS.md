@@ -235,6 +235,19 @@ def compute(df, params):
 Supported parameter value types: numbers, strings, booleans, and nested
 lists/dicts (JSON).
 
+### Changing them in the app
+
+The gear of an indicator's row in the chart's legend opens its settings (so does the gear in
+the Indicators panel). Change a value and press **Save** (or Enter): the chart draws the
+indicator again at once, and the legend shows the values after its name, e.g.
+`Simple Moving Average 50`. A value typed as a number arrives as a number.
+
+The **built-in** indicators take new parameters too (a 50-bar Simple Moving Average instead of
+the 20-bar one, say). Their values are checked: a period or a number of bars is a whole number
+of at least 1, a multiplier is a number above 0. **Reset to defaults** brings their own values
+back. Their code cannot be changed: **Copy** makes an indicator of your own from one, with its
+code and settings, and that copy can be changed in every way.
+
 ---
 
 ## 7. Limits
@@ -452,7 +465,7 @@ More shape recipes are in the [drawing guide](DRAWINGS.md#5-recipes).
 | List indicators | `GET /api/indicators` | `list_indicators` |
 | Read one | `GET /api/indicators/{id}` | `get_indicator` |
 | Create | `POST /api/indicators` | `write_indicator` |
-| Update | `PUT /api/indicators/{id}` | `write_indicator` |
+| Update | `PUT /api/indicators/{id}` (the fields given; a built-in takes `params` only) | `write_indicator` |
 | Delete | `DELETE /api/indicators/{id}` | `delete_indicator` |
 | Run over bars | `POST /api/indicators/{id}/run?symbol=&timeframe=&count=` (`count`: the newest bars the lines are wanted over, 500 unless given, up to 100,000) | `run_indicator` |
 | Snapshot with indicators | `POST /api/snapshot` | `get_snapshot` |
@@ -471,7 +484,12 @@ More shape recipes are in the [drawing guide](DRAWINGS.md#5-recipes).
 ```
 
 - Leave `id` empty on create; the server assigns `user.<hex>`.
-- Built-in ids (`builtin.*`) cannot be modified or deleted.
+- An update changes the fields it gives: `{"params": {"period": 30}}` changes the parameters
+  and leaves the rest. The id is the one in the address (one in the body is not needed).
+- Built-in ids (`builtin.*`) cannot be deleted, and only their `params` can be changed
+  (`PUT /api/indicators/builtin.sma` with `{"params": {"period": 50}}`); a value they do not
+  take is refused with a sentence that says why. `GET` gives a built-in's own values in
+  `defaults`.
 
 ### Run response
 

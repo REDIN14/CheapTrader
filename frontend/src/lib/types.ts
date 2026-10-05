@@ -474,6 +474,8 @@ export interface IndicatorSpec {
   overlay: boolean;
   pane: number;
   params: Record<string, unknown>;
+  /** A built-in's own parameters (`params` are what the user set them to); null for the user's own indicators. */
+  defaults?: Record<string, unknown> | null;
   created_at?: string | null;
 }
 
@@ -489,6 +491,8 @@ export interface IndicatorResult {
   name: string;
   overlay: boolean;
   pane: number;
+  /** The parameters it was run with. */
+  params?: Record<string, unknown>;
   plots: IndicatorPlot[];
   /** Shapes the indicator draws on the chart (see docs/DRAWINGS.md). */
   drawings?: Drawing[];

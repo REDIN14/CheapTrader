@@ -14,6 +14,7 @@ import { useServerClock } from "./lib/serverClock";
 import { METATRADER_STEP, RESUME_KEY, resumeStep } from "./lib/tour";
 import { TF } from "./lib/timeframes";
 import { indicatorCount, plotsFrom } from "./lib/indicatorDepth";
+import { paramText } from "./lib/indicatorParams";
 import type { Drawing } from "./lib/drawings";
 import { replayMarkers } from "./lib/replayMarkers";
 import { useChartData, type ChartFrame } from "./lib/useChartData";
@@ -1277,7 +1278,7 @@ export default function App() {
             data: p.data,
           });
         });
-        legend.push({ id, name: result.name, colors, pane });
+        legend.push({ id, name: result.name, params: paramText(result.params), colors, pane });
         (result.drawings ?? []).forEach((d, i) => {
           drawings.push({ ...d, id: `${id}:${d.id || i}`, owner: id });
         });
@@ -1355,10 +1356,16 @@ export default function App() {
     [showDock, panel, setPanel, setShowDock],
   );
 
-  const openIndicatorPanel = useCallback(() => {
-    setPanel("indicators");
-    setShowDock(true);
-  }, [setPanel, setShowDock]);
+  // The indicator panel; with an id (the gear of a legend row) it opens on that indicator's settings.
+  const [editIndicator, setEditIndicator] = useState<{ id: string; seq: number } | null>(null);
+  const openIndicatorPanel = useCallback(
+    (id?: string) => {
+      setPanel("indicators");
+      setShowDock(true);
+      if (id) setEditIndicator((last) => ({ id, seq: (last?.seq ?? 0) + 1 }));
+    },
+    [setPanel, setShowDock],
+  );
 
   // -- the welcome tour ---------------------------------------------------------
   const closeTour = useCallback(() => {
@@ -1898,6 +1905,7 @@ export default function App() {
                 onToggle={toggleIndicator}
                 onChanged={() => setIndicatorVersion((v) => v + 1)}
                 onDocs={() => setDocs("indicators")}
+                editRequest={editIndicator}
               />
             ) : replayActive ? (
               <ReplayTradePanel

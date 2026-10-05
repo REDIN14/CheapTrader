@@ -3323,6 +3323,36 @@ textarea {
   color: var(--ct-muted);
   font-size: 12px;
 }
+/* a save that was refused: it must be seen, not read as a hint */
+.im-message.error {
+  color: var(--ct-down);
+  font-size: 13px;
+}
+.im-note {
+  margin: 0;
+  color: var(--ct-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.im-link {
+  padding: 0;
+  color: var(--ct-accent);
+  font-size: inherit;
+  text-decoration: underline;
+}
+.im-link:hover {
+  color: var(--ct-text-strong);
+}
+/* what a built-in does not let change: shown, but plainly not for typing in */
+.im-field input:read-only,
+.im-param-row input:read-only,
+.im-code:read-only {
+  color: var(--ct-muted);
+  border-style: dashed;
+}
+.im-field input[type="checkbox"]:disabled + span {
+  color: var(--ct-muted);
+}
 
 /* --- responsive ------------------------------------------------------------------------ */
 
@@ -3390,6 +3420,11 @@ textarea {
   pointer-events: auto;
 }
 .tv-legend-ind-name {
+  white-space: nowrap;
+}
+/* the values of its parameters after the name, as TradingView shows them ("SMA 50") */
+.tv-legend-ind-params {
+  color: var(--ct-muted);
   white-space: nowrap;
 }
 

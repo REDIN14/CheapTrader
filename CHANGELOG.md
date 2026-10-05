@@ -2,6 +2,20 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## 0.2.4 — indicator settings that take effect
+
+* **Saving an indicator's settings works.** Every Save in an indicator's settings was refused ("Field required":
+  the page sent the change without the indicator's id, which the program also wanted in the body), so a new period
+  or any other change never reached the chart. The program now takes a change without the id, and changes only the
+  fields that are given.
+* **The parameters of the built-in indicators can be changed.** The 20-bar Simple Moving Average can become a 50-bar
+  one, and so on: press Save and the chart draws it at once. The values are checked (a period is a whole number of at
+  least 1, a multiplier is above 0), they are kept in the data folder, and Reset to defaults brings the built-in's own
+  back. The code of a built-in stays as it comes; Copy makes an indicator of your own from it.
+* **The gear of an indicator in the chart's legend opens that indicator's settings** (it opened the list), and the
+  legend shows the values after the name, as TradingView does: "Simple Moving Average 50".
+* A save that is refused says why in red next to the Save button (it was small grey text under it).
+
 ## 0.2.3 — indicators see the whole chart
 
 * **An indicator is run over every candle on the chart, not just the newest 500.** The page asked for 500 bars

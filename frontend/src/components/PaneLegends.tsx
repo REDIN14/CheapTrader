@@ -12,7 +12,8 @@ interface Props {
   geometry: ChartGeometry | null;
   /** The indicators with a pane of their own; `pane` counts from 1, the pane just under the candles. */
   rows: LegendIndicator[];
-  onManage: () => void;
+  /** Opens the settings of that indicator. */
+  onManage: (id: string) => void;
 }
 
 export function PaneLegends({ geometry, rows, onManage }: Props) {

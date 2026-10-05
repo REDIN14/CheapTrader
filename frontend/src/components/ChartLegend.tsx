@@ -19,10 +19,12 @@ import { SettingsIcon } from "./Icons";
 /** Live prices count as flowing for this long after the last new tick. */
 const LIVE_WINDOW_MS = 30_000;
 
-/** One indicator in a legend: its name and one dot per colour it draws in. */
+/** One indicator in a legend: its name, its parameters' values and one dot per colour it draws in. */
 export interface LegendIndicator {
   id: string;
   name: string;
+  /** The values of its parameters, shown after the name ("50" for a 50-bar average); "" for none. */
+  params?: string;
   colors: string[];
   /** 0: on the candles. 1, 2, ...: the pane of its own, counted from the one just under the candles. */
   pane: number;
@@ -59,8 +61,8 @@ interface Props {
   lagging?: boolean;
   trade: LegendTrade | null;
   indicators: LegendIndicator[];
-  /** Opens the indicator panel, where an indicator can be edited or removed. */
-  onManageIndicators: () => void;
+  /** Opens the settings of that indicator in the indicator panel, where it can also be removed. */
+  onManageIndicators: (id: string) => void;
 }
 
 export function ChartLegend({
@@ -127,8 +129,8 @@ export function ChartLegend({
   );
 }
 
-/** A line of the legend for one indicator: coloured dots, its name, and (on hover) its settings button. */
-export function IndicatorRow({ indicator, onManage }: { indicator: LegendIndicator; onManage: () => void }) {
+/** A line of the legend for one indicator: coloured dots, its name and parameters, and (on hover) its settings button. */
+export function IndicatorRow({ indicator, onManage }: { indicator: LegendIndicator; onManage: (id: string) => void }) {
   // an indicator that only draws shapes has no line colour: a neutral dot
   const colours = indicator.colors.length ? [...new Set(indicator.colors)].slice(0, 4) : ["#787b86"];
   return (
@@ -137,10 +139,11 @@ export function IndicatorRow({ indicator, onManage }: { indicator: LegendIndicat
         <span key={c} className="tv-legend-dot" style={{ background: c }} />
       ))}
       <span className="tv-legend-ind-name">{indicator.name}</span>
+      {indicator.params && <span className="tv-legend-ind-params">{indicator.params}</span>}
       <button
         className="tv-legend-ind-btn"
-        title={`${indicator.name} — open indicator settings`}
-        onClick={onManage}
+        title={`${indicator.name}: settings`}
+        onClick={() => onManage(indicator.id)}
       >
         <SettingsIcon size={18} />
       </button>

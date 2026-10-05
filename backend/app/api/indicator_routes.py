@@ -5,8 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from app.indicators.needs import MAX_SHOWN_BARS, bars_to_load, declared_bars
+from app.indicators.registry import IndicatorError
 from app.indicators.sandbox import run_indicator
-from app.schemas import IndicatorResult, IndicatorSpec, Timeframe
+from app.schemas import IndicatorResult, IndicatorSpec, IndicatorUpdate, Timeframe
 from app.state import get_state
 
 router = APIRouter(prefix="/api/indicators", tags=["indicators"])
@@ -27,16 +28,23 @@ def get_indicator(indicator_id: str) -> IndicatorSpec:
 
 @router.post("", response_model=IndicatorSpec)
 def create_indicator(spec: IndicatorSpec) -> IndicatorSpec:
-    return get_state().indicators.save(spec)
+    try:
+        return get_state().indicators.save(spec)
+    except IndicatorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/{indicator_id}", response_model=IndicatorSpec)
-def update_indicator(indicator_id: str, spec: IndicatorSpec) -> IndicatorSpec:
-    registry = get_state().indicators
-    if registry.is_builtin(indicator_id):
-        raise HTTPException(status_code=400, detail="built-in indicators cannot be modified")
-    spec.id = indicator_id
-    return registry.save(spec)
+def update_indicator(indicator_id: str, change: IndicatorUpdate) -> IndicatorSpec:
+    """Change an indicator: the fields that are given (the id is the one in the address). A built-in takes new
+    parameters, kept in the data folder; its code, name and kind cannot be changed (a copy of it can)."""
+    try:
+        spec = get_state().indicators.update(indicator_id, change)
+    except IndicatorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"indicator {indicator_id} not found")
+    return spec
 
 
 @router.delete("/{indicator_id}")
@@ -66,7 +74,7 @@ def run(
     bars = state.cache.get_bars(
         state.broker.adapter, symbol, timeframe, count=bars_to_load(count, declared_bars(spec.code))
     )
-    return run_indicator(
+    result = run_indicator(
         indicator_id=spec.id,
         name=spec.name,
         code=spec.code,
@@ -77,3 +85,5 @@ def run(
         settings=state.settings,
         show_from=bars[-count].time if len(bars) > count else None,
     )
+    result.params = dict(spec.params)  # the legend shows them after the name
+    return result

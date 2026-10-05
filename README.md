@@ -437,6 +437,17 @@ sized together so that they take at most 60% of the chart (but never less than 7
 and the dividers can be dragged: the sizes you leave are remembered for the next time there are
 as many panes.
 
+### Indicator settings
+
+The gear of an indicator's row in the chart's legend opens that indicator's settings (the gear in the
+Indicators panel does too). Change a parameter and press Save: the chart draws it again at once, and the
+legend shows the values after the name, as TradingView does (`Simple Moving Average 50`). A refused save
+says why in red next to the button. The built-in indicators take new parameters as well; their values are
+checked (a period is a whole number of at least 1), kept in `data/indicators/builtin/<id>.json`, and
+**Reset to defaults** brings the built-in's own back. Their code cannot be changed: **Copy** makes an
+indicator of your own from one. (Until 0.2.4 every save of the settings was refused, "Field required":
+the page sent the change without the id the program wanted in the body.)
+
 ### How many bars an indicator gets
 
 An indicator is run over as many bars as the chart shows: its history depth (the bar count at the bottom left of
