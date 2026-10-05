@@ -107,8 +107,9 @@ def _to_float_list(values) -> list[float | None]:
     return out
 
 
-def _normalise(result, times: list[int]) -> list[dict]:
-    """Normalise the user's return value into a list of plot dicts."""
+def _normalise(result, times: list[int], show_from: int | None = None) -> list[dict]:
+    """Normalise the user's return value into a list of plot dicts. With ``show_from`` the points before that
+    time are left out: the bars they belong to only warmed the indicator up."""
     plots: list[dict] = []
 
     def add(name: str, values, color: str | None = None, kind: str = "line") -> None:
@@ -116,7 +117,7 @@ def _normalise(result, times: list[int]) -> list[dict]:
         data = [
             {"time": t, "value": v}
             for t, v in zip(times, series, strict=False)
-            if v is not None
+            if v is not None and (show_from is None or t >= show_from)
         ]
         plots.append({"name": name, "type": kind, "color": color, "data": data})
 
@@ -245,6 +246,7 @@ def main() -> int:
 
     df = pd.DataFrame(payload["bars"])
     params = payload.get("params", {})
+    show_from = payload.get("show_from")
     times = [int(t) for t in df["time"].tolist()]
 
     _install_draw_helpers()
@@ -268,7 +270,7 @@ def main() -> int:
         if isinstance(result, dict) and "drawings" in result:
             result = dict(result)
             drawings = _normalise_drawings(result.pop("drawings"))
-        plots = _normalise(result, times)
+        plots = _normalise(result, times, show_from)
         print(json.dumps({"ok": True, "plots": plots, "drawings": drawings}))
     except Exception as exc:  # noqa: BLE001 - report any user error back to the parent
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))

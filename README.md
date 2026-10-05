@@ -437,6 +437,22 @@ sized together so that they take at most 60% of the chart (but never less than 7
 and the dividers can be dragged: the sizes you leave are remembered for the next time there are
 as many panes.
 
+### How many bars an indicator gets
+
+An indicator is run over as many bars as the chart shows: its history depth (the bar count at the bottom left of
+the chart, 20,000 by default, up to 100,000), so its lines reach back as far as the candles do. It used to be run
+over the newest 500 bars only, which left a line on the last few percent of a chart and none at all in a replay that
+began further back. In a replay it is run over every bar back to the replay's first candle (the lines are still
+clipped at the cursor). The indicators of a chart are run side by side.
+
+An indicator that needs more than the chart has (an average over 50,000 bars on a chart of 20,000) says so with one
+line at the top level of its code, `NEEDS_BARS = 60_000`: it is then run over that many bars, and only the lines over
+the chart's own bars come back; the older bars warm it up. The most it is ever given is 200,000 bars, and where the
+broker has fewer it gets what there is. The snapshot tool warms an indicator up in the same way. The line is read
+without running the code (`backend/app/indicators/needs.py`), so it is a whole number, not something worked out from
+the parameters. The page's part is `frontend/src/lib/indicatorDepth.ts`; the guide is
+[`docs/INDICATORS.md`](docs/INDICATORS.md).
+
 ### Changing the interval
 
 Switching the interval, or coming back to a symbol you already had open, neither
@@ -635,7 +651,8 @@ The thin line along its lower edge shows how far through the window the cursor i
 The chart opens at a readable zoom with the cursor near the right edge and follows
 it as bars arrive; scroll or zoom whenever you like and it stays where you put it.
 Changing the symbol or the interval ends the replay (as in TradingView). Indicators
-are clipped at the cursor so they cannot show the future.
+are clipped at the cursor so they cannot show the future, and they are run over every bar back to
+the replay's first candle, so they have values from its first bar on.
 
 **The paper account.** Sell / Buy, the lot box, the ticket and the position tags
 work exactly as in live trading, including dragging stops and targets, and every

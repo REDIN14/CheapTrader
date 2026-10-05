@@ -243,6 +243,13 @@
   <h2 id="changes-h">Recent changes</h2>
   <div class="body">
     <dl class="log">
+      <dt>0.2.3 <time datetime="2026-10-05">5 October 2026</time></dt>
+      <dd>
+        <ul>
+          <li>Indicators are run over every candle on the chart (20,000 by default), not just the newest 500. Their lines reach back as far as the candles do, and in a replay from far back they are there from its first bar on.</li>
+          <li>An indicator that needs more bars says so with one line, <code>NEEDS_BARS = 60_000</code>, and gets them.</li>
+        </ul>
+      </dd>
       <dt>0.2.2 <time datetime="2026-10-03">3 October 2026</time></dt>
       <dd>
         <ul>

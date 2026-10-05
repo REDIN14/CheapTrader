@@ -2,6 +2,24 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## 0.2.3 — indicators see the whole chart
+
+* **An indicator is run over every candle on the chart, not just the newest 500.** The page asked for 500 bars
+  whatever the chart held, so on a chart of 20,000 candles a line covered the last few percent of it (scroll back
+  and it ended), a 200-bar average started late, one over 500 bars or more was empty, and a replay that began more
+  than 500 bars back had no indicator line at all. Now the indicator gets as many bars as the chart shows (the bar
+  count at the bottom left, 20,000 by default, up to 100,000), and during a replay every bar back to the replay's
+  first candle (the lines are still cut at the cursor, so they cannot show the future).
+* **An indicator that needs more says so.** One line at the top level of its code, `NEEDS_BARS = 60_000`, makes the
+  program run it over that many bars (200,000 at most; where the broker has fewer it gets what there is). Only the
+  lines over the chart's own bars come back, the older bars warm the indicator up. The screenshot tool (`POST
+  /api/snapshot`) warms indicators up the same way. The line is read without running the code. See the indicator
+  guide, "How many bars `df` holds".
+* The indicators of a chart are run side by side instead of one after the other.
+* `POST /api/indicators/{id}/run` takes a `count` of up to 100,000 (it was 20,000). An indicator that is too slow
+  says over how many bars it timed out; the guide explains what to do about a loop over the bars (it takes seconds
+  over 20,000 bars where it took no time over 500).
+
 ## 0.2.2 — a window that cannot outlive the program, and an update nobody can break
 
 * **Ending CheapTrader in Task Manager no longer leaves its window behind.** *End task* on CheapTrader ended the program

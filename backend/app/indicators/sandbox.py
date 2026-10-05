@@ -107,8 +107,13 @@ def run_indicator(
     overlay: bool = True,
     pane: int = 0,
     settings: Settings | None = None,
+    show_from: int | None = None,
 ) -> IndicatorResult:
-    """Execute an indicator over ``bars`` and return its plots."""
+    """Execute an indicator over ``bars`` and return its plots.
+
+    With ``show_from`` (an epoch second) only the points of the lines from that bar on come back: the bars before it
+    are there to warm the indicator up (see ``needs.py``).
+    """
     settings = settings or get_settings()
 
     with tempfile.TemporaryDirectory(prefix="ct_ind_") as tmp:
@@ -121,6 +126,7 @@ def run_indicator(
                 {
                     "bars": [b.model_dump() for b in bars],
                     "params": params or {},
+                    "show_from": show_from,
                 }
             ),
             encoding="utf-8",
@@ -152,7 +158,10 @@ def run_indicator(
                 name=name,
                 overlay=overlay,
                 pane=pane,
-                error=f"Indicator timed out after {settings.indicator_timeout}s",
+                error=(
+                    f"Indicator timed out after {settings.indicator_timeout}s over {len(bars):,} bars "
+                    "(a loop over the bars is slow: work on the whole series at once, or raise CT_INDICATOR_TIMEOUT)"
+                ),
             )
 
     if not stdout.strip():

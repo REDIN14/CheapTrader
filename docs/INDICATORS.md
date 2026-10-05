@@ -52,6 +52,38 @@ One row per bar, oldest first, indexed `0..n-1`.
 > Use `NaN` for warm-up periods (e.g. the first `period-1` values of a moving
 > average). `NaN` values are dropped from the rendered line automatically.
 
+### How many bars `df` holds
+
+`df` holds **as many bars as the chart shows**: its history depth, which is 20,000 bars unless it was
+changed (the bar count at the bottom left of the chart: 5,000 up to 100,000), so that the lines reach
+back as far as the candles do. During a replay it holds every bar back to the replay's first candle.
+(Before version 0.2.3 it was always the newest 500, so a line covered the last few percent of the
+chart and a replay that began further back had none.)
+
+An indicator that needs **more** than that says so with one line at the top level of its file:
+
+```python
+NEEDS_BARS = 60_000      # the most bars it will ever want
+
+
+def compute(df, params):
+    return {"SMA 50000": df["close"].rolling(50_000).mean()}
+```
+
+The indicator is then run over that many bars. The lines that come back are only the ones over the bars
+the chart shows (the older bars are there to warm the indicator up), so `len(df)` is bigger than the
+chart but every series you return must still be as long as `df`. Good to know:
+
+- It is read from the code **without running it**, so it must be a whole number, or a sum or
+  product of whole numbers (`NEEDS_BARS = 50 * 1_000`). Something worked out from `params` is not
+  read: write the most the indicator may need.
+- It is a minimum, not a request to shrink: a chart deeper than that still gives the indicator all of
+  its bars.
+- The most any indicator is run over is 200,000 bars. Where the broker has fewer, it gets what there is
+  (the first lines of an average that needs more than that stay empty, as for any warm-up).
+- Snapshots (`POST /api/snapshot`) warm an indicator up the same way: it gets the bars it needs from
+  before the range that is drawn.
+
 ---
 
 ## 3. Return formats
@@ -213,8 +245,12 @@ lists/dicts (JSON).
 | Memory cap | 2048 MB | `CT_INDICATOR_MEMORY_MB` |
 
 Exceeding the timeout returns
-`Indicator timed out after 10.0s`. Exceeding memory kills the process. Keep
-computations vectorised — avoid Python loops over bars.
+`Indicator timed out after 10.0s over 20,000 bars`. Exceeding memory kills the process. Keep
+computations vectorised — avoid Python loops over bars. An indicator is run over the whole chart now
+(see §2), so a loop that took no time over 500 bars can take seconds over 20,000, and one that compares
+every bar with every other (a loop inside a loop) will not finish: work on the whole series at once
+(`.rolling()`, `.shift()`, `np.where`), or raise `CT_INDICATOR_TIMEOUT`. A vectorised indicator takes
+about a second over 20,000 bars and two or three over 200,000.
 
 ---
 
@@ -418,7 +454,7 @@ More shape recipes are in the [drawing guide](DRAWINGS.md#5-recipes).
 | Create | `POST /api/indicators` | `write_indicator` |
 | Update | `PUT /api/indicators/{id}` | `write_indicator` |
 | Delete | `DELETE /api/indicators/{id}` | `delete_indicator` |
-| Run over bars | `POST /api/indicators/{id}/run?symbol=&timeframe=&count=` | `run_indicator` |
+| Run over bars | `POST /api/indicators/{id}/run?symbol=&timeframe=&count=` (`count`: the newest bars the lines are wanted over, 500 unless given, up to 100,000) | `run_indicator` |
 | Snapshot with indicators | `POST /api/snapshot` | `get_snapshot` |
 
 ### Create payload
@@ -454,6 +490,9 @@ More shape recipes are in the [drawing guide](DRAWINGS.md#5-recipes).
 }
 ```
 
+The lines are for the newest `count` bars. An indicator with `NEEDS_BARS` (§2) is run over more
+bars than that when it says so; the extra ones only warm it up and no point comes back for them.
+
 `error` is `null` on success, otherwise a human-readable message. `drawings` lists the shapes
 the indicator drew (empty if none); their format is in the [drawing guide](DRAWINGS.md#2-what-a-drawing-is).
 Shapes you want to keep on the chart yourself, outside any indicator, are added with
@@ -483,6 +522,7 @@ Shapes you want to keep on the chart yourself, outside any indicator, are added 
 - [ ] `overlay` is `true` for price-scale studies, `false` for oscillators.
 - [ ] Parameters have sensible defaults.
 - [ ] No blocked imports.
-- [ ] Runs within the timeout (vectorised, no per-bar Python loops where avoidable).
+- [ ] Runs within the timeout over a whole chart (20,000 bars or more): vectorised, no per-bar Python loops where avoidable.
+- [ ] If it needs more bars than a chart holds, `NEEDS_BARS = <whole number>` is at the top level of the file.
 - [ ] Shapes (if any) use times taken from `df["time"]`, prices that are not `NaN`, and the right number of points for their kind.
 - [ ] No more than 500 shapes.

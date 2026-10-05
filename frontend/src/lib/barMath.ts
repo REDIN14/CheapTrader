@@ -2,8 +2,8 @@
 
 import type { Bar } from "./types";
 
-/** Index of the first bar whose time is >= `time` (`bars.length` when there is none). */
-export function lowerBound(bars: Bar[], time: number): number {
+/** Index of the first bar (or other point in time order) whose time is >= `time` (`bars.length` when there is none). */
+export function lowerBound(bars: readonly { time: number }[], time: number): number {
   let lo = 0;
   let hi = bars.length;
   while (lo < hi) {

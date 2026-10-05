@@ -179,3 +179,39 @@ def test_a_snapshot_shows_the_drawings_of_the_chart_and_of_the_indicators(tmp_pa
     store.add("EURUSD", Drawing.model_validate({"type": "rectangle", "points": [{"time": bars[10].time, "price": 1.2}, {"time": bars[30].time, "price": 0.9}], "style": {}}))
     assert plot_area(snapshot()) != base  # the user's drawing is on the chart, so it is in the picture
     assert plot_area(snapshot(include_drawings=False)) == base  # unless the caller wants the chart bare
+
+
+# -- an indicator that needs more bars than the picture shows --------------------------------------------------------
+def test_a_snapshot_warms_up_an_indicator_that_says_it_needs_more_bars(tmp_path, monkeypatch) -> None:
+    import datetime
+
+    seen: dict = {}
+
+    def fake_render(**kwargs) -> bytes:
+        seen.update(kwargs)
+        return b"\x89PNG fake"
+
+    monkeypatch.setattr("app.snapshot.service.render_chart", fake_render)
+    broker = MockAdapter()
+    broker.connect()
+    registry = IndicatorRegistry(data_dir=tmp_path)
+    slow = (
+        "def compute(df, params):\n"
+        "    return {'SMA': df['close'].rolling(300).mean()}\n"
+    )
+    plain = registry.save(IndicatorSpec(id="", name="Slow", code=slow))
+    warmed = registry.save(IndicatorSpec(id="", name="Slow, says so", code="NEEDS_BARS = 600\n\n" + slow))
+    start = datetime.datetime(2024, 1, 1)
+    end = start + datetime.timedelta(hours=100)
+
+    def lines(indicator: str) -> list[dict]:
+        request = SnapshotRequest(symbol="EURUSD", timeframe=Timeframe.H1, start=start, end=end, indicators=[indicator])
+        build_snapshot(broker, registry, request)
+        return seen["plots"][0]["data"]
+
+    # a 300-bar average cannot be drawn over 100 bars ...
+    assert lines(plain.id) == []
+    # ... unless the indicator says it needs more: the bars before the picture warm it up, and only the picture's own come back
+    shown = lines(warmed.id)
+    assert len(shown) == 100
+    assert shown[0]["time"] == int(start.timestamp()) and shown[-1]["time"] < int(end.timestamp())

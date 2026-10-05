@@ -3,15 +3,32 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.broker.base import BrokerAdapter
 from app.drawings import store as drawing_store
+from app.indicators.needs import MAX_INDICATOR_BARS, declared_bars
 from app.indicators.registry import IndicatorRegistry
 from app.indicators.sandbox import run_indicator
-from app.schemas import SnapshotPart, SnapshotRequest, SnapshotResponse
+from app.schemas import TIMEFRAME_SECONDS, Bar, SnapshotPart, SnapshotRequest, SnapshotResponse, Timeframe
 from app.snapshot.renderer import render_chart
 from app.snapshot.segmenter import segment_bars
+
+
+def _warm_up_bars(broker: BrokerAdapter, symbol: str, timeframe: Timeframe, first: int, extra: int) -> list[Bar]:
+    """Up to ``extra`` bars that end just before the bar at ``first`` (the one the snapshot starts with): they warm up
+    an indicator that says it needs more bars than the snapshot shows (see ``app/indicators/needs.py``)."""
+    step = TIMEFRAME_SECONDS[timeframe]
+    end = datetime.fromtimestamp(first, tz=timezone.utc)
+    older: list[Bar] = []
+    # Markets close at weekends and overnight, so the bars take more time than their number says: look further back
+    # until there are enough (or the broker has no more).
+    for slack in (1.6, 6, 30):
+        start = datetime.fromtimestamp(max(0, first - int(extra * step * slack)), tz=timezone.utc)
+        older = [b for b in broker.get_bars(symbol, timeframe, start=start, end=end) if b.time < first]
+        if len(older) >= extra:
+            break
+    return older[-extra:]
 
 
 def build_snapshot(
@@ -43,14 +60,21 @@ def build_snapshot(
         spec = registry.get(indicator_id)
         if spec is None:
             continue
+        run_over, show_from = bars, None
+        extra = min(declared_bars(spec.code) or 0, MAX_INDICATOR_BARS) - len(bars)
+        if extra > 0:  # it says it needs more bars than the picture shows: the ones before it warm it up
+            warm = _warm_up_bars(broker, request.symbol, request.timeframe, bars[0].time, extra)
+            if warm:
+                run_over, show_from = warm + bars, bars[0].time
         result = run_indicator(
             indicator_id=spec.id,
             name=spec.name,
             code=spec.code,
-            bars=bars,
+            bars=run_over,
             params=spec.params,
             overlay=spec.overlay,
             pane=spec.pane,
+            show_from=show_from,
         )
         if result.error:
             continue

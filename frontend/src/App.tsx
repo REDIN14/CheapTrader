@@ -13,6 +13,7 @@ import { foldTicks } from "./lib/liveBar";
 import { useServerClock } from "./lib/serverClock";
 import { METATRADER_STEP, RESUME_KEY, resumeStep } from "./lib/tour";
 import { TF } from "./lib/timeframes";
+import { indicatorCount, plotsFrom } from "./lib/indicatorDepth";
 import type { Drawing } from "./lib/drawings";
 import { replayMarkers } from "./lib/replayMarkers";
 import { useChartData, type ChartFrame } from "./lib/useChartData";
@@ -1221,52 +1222,65 @@ export default function App() {
     [setActiveIndicators],
   );
 
-  // Run active indicators whenever they, the symbol, or the timeframe change.
+  // Run active indicators whenever they, the symbol, the timeframe or the depth change. They are run over as many
+  // bars as the chart shows (its history depth), and during a replay over every bar back to the replay's first
+  // candle, so that their lines reach as far back as the candles do (see lib/indicatorDepth.ts).
+  const replayFirst = frame.source === "replay" && bars.length ? bars[0].time : 0;
   useEffect(() => {
     if (!symbol || activeIndicators.length === 0) {
       setIndicatorSet(NO_INDICATORS);
       return;
     }
     const key = `${symbol}|${timeframe}`;
+    const count = indicatorCount(barCount, replayFirst, Date.now() / 1000, TF[timeframe].seconds);
     let cancelled = false;
     (async () => {
       const plots: IndicatorPlot[] = [];
       const legend: LegendIndicator[] = [];
       const drawings: Drawing[] = [];
       const missing: string[] = [];
+      // They run side by side (each one is a process of its own on the server: over this many bars it is the
+      // wait that adds up otherwise), and are put on the chart in the order they were added.
+      const runs = activeIndicators.map((id) =>
+        indicatorApi.run(id, symbol, timeframe, count).then(
+          (result) => ({ id, result }),
+          (err: unknown) => ({ id, err }),
+        ),
+      );
       // Every indicator that is not an overlay gets a pane of its own, in the order they were added.
       // Sharing one (two oscillators each asking for "pane 1") would draw RSI's 0-100 and MACD's
       // 0.001 on one scale, and one of them would be a flat line.
       let nextPane = 1;
-      for (const id of activeIndicators) {
-        try {
-          const result = await indicatorApi.run(id, symbol, timeframe, 500);
-          if (result.error) {
-            setError(`Indicator "${result.name}": ${result.error}`);
-            continue;
-          }
-          const pane = result.overlay || result.plots.length === 0 ? 0 : nextPane++;
-          const colors = result.plots.map((p, i) => p.color ?? PLOT_COLORS[i % PLOT_COLORS.length]);
-          result.plots.forEach((p, i) => {
-            plots.push({
-              name: p.name,
-              color: colors[i],
-              pane,
-              type: p.type === "histogram" ? "histogram" : "line",
-              data: p.data,
-            });
-          });
-          legend.push({ id, name: result.name, colors, pane });
-          (result.drawings ?? []).forEach((d, i) => {
-            drawings.push({ ...d, id: `${id}:${d.id || i}`, owner: id });
-          });
-        } catch (err) {
-          if (err instanceof ApiError && err.status === 404) {
-            missing.push(id); // the indicator was deleted: drop it from the chart
+      for (const run of runs) {
+        const outcome = await run;
+        if ("err" in outcome) {
+          if (outcome.err instanceof ApiError && outcome.err.status === 404) {
+            missing.push(outcome.id); // the indicator was deleted: drop it from the chart
           } else {
-            setError((err as Error).message);
+            setError((outcome.err as Error).message);
           }
+          continue;
         }
+        const { id, result } = outcome;
+        if (result.error) {
+          setError(`Indicator "${result.name}": ${result.error}`);
+          continue;
+        }
+        const pane = result.overlay || result.plots.length === 0 ? 0 : nextPane++;
+        const colors = result.plots.map((p, i) => p.color ?? PLOT_COLORS[i % PLOT_COLORS.length]);
+        result.plots.forEach((p, i) => {
+          plots.push({
+            name: p.name,
+            color: colors[i],
+            pane,
+            type: p.type === "histogram" ? "histogram" : "line",
+            data: p.data,
+          });
+        });
+        legend.push({ id, name: result.name, colors, pane });
+        (result.drawings ?? []).forEach((d, i) => {
+          drawings.push({ ...d, id: `${id}:${d.id || i}`, owner: id });
+        });
       }
       if (cancelled) return;
       setIndicatorSet({ key, plots, legend, drawings });
@@ -1277,17 +1291,20 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [symbol, timeframe, activeIndicators, indicatorVersion, setActiveIndicators]);
+  }, [symbol, timeframe, activeIndicators, indicatorVersion, barCount, replayFirst, setActiveIndicators]);
 
   // Values computed for another interval than the candles on screen would sit on
   // the wrong bars. Until the right ones arrive the plots keep their shape (so the
   // sub-panes stay where they are) but carry no values.
+  // The candles on screen may reach back less far than the indicator was run (the chart shows its newest 1,500
+  // bars first and the rest a moment later): a point before the first candle would stretch the time axis.
+  const firstBarTime = bars.length ? bars[0].time : 0;
   const livePlots = useMemo(
     () =>
       indicatorSet.key === frameKey
-        ? indicatorSet.plots
+        ? plotsFrom(indicatorSet.plots, firstBarTime)
         : indicatorSet.plots.map((p) => ({ ...p, data: [] })),
-    [indicatorSet, frameKey],
+    [indicatorSet, frameKey, firstBarTime],
   );
   // Shapes an indicator drew for another symbol or interval do not belong on these candles.
   const liveDrawings = indicatorSet.key === frameKey ? indicatorSet.drawings : NO_DRAWINGS;
