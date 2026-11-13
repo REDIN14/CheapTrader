@@ -2,7 +2,7 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
-## Unreleased
+## 0.2.5 — replay intervals, seconds charts and magnet mode
 
 * Changing the interval during Bar Replay keeps the replay, its precise clock, open positions and
   paper account. Candles are loaded around that historical cursor at the depth needed by the new
