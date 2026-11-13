@@ -12,7 +12,7 @@ from datetime import datetime
 
 from app.broker.base import BrokerAdapter
 from app.data.store import BarStore
-from app.schemas import Bar, Tick, Timeframe
+from app.schemas import Bar, BarPage, Tick, Timeframe
 
 
 @dataclass
@@ -69,6 +69,18 @@ class DataCache:
     ) -> list[Bar]:
         """Fetch only the missing parts of [start, end] and return the full range."""
         return self.store.ensure_range(broker, symbol, timeframe, start, end)
+
+    def history_before(self, broker: BrokerAdapter, symbol: str, timeframe: Timeframe,
+                       boundary: int, count: int = 1500) -> BarPage:
+        from app.data.history import before
+
+        return before(self, broker, symbol, timeframe, boundary, count)
+
+    def history_after(self, broker: BrokerAdapter, symbol: str, timeframe: Timeframe,
+                      boundary: int, count: int = 1500) -> BarPage:
+        from app.data.history import after
+
+        return after(self, broker, symbol, timeframe, boundary, count)
 
     def get_tick(self, broker: BrokerAdapter, symbol: str) -> Tick | None:
         key = f"tick:{symbol}"

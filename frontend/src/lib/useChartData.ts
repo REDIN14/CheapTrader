@@ -5,9 +5,8 @@
 // next series is ready quickly:
 //
 //   - a series already seen is shown at once, and brought up to date behind it;
-//   - otherwise the newest 1,500 bars arrive first (enough to look at and scroll
-//     around in), and the full depth replaces them in the background without
-//     moving anything on screen;
+//   - otherwise the newest 1,500 bars arrive first; older pages are prepended as
+//     the user scrolls left, without moving the candles already on screen;
 //   - the view survives an interval change (same zoom, same place — see
 //     ViewPolicy in lib/chart.ts).
 //
@@ -17,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { firstDifference } from "./barMath";
+import { prependBars } from "./history";
 import {
   barsNeeded,
   fetchBars,
@@ -45,6 +45,7 @@ export interface ChartFrame {
   source: "live" | "replay";
   /** Grows with every frame, so consumers can tell frames apart. */
   seq: number;
+  hasMoreHistory?: boolean;
 }
 
 interface Options {
@@ -98,6 +99,8 @@ export function useChartData({
   }));
   // True from the request until the first candles of the new series are on screen.
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const older = useRef<object | null>(null);
 
   // The frame on screen as of the last commit; the loader reads it to decide what
   // the next frame should do to the view.
@@ -112,6 +115,8 @@ export function useChartData({
   }, []);
 
   useEffect(() => {
+    older.current = null;
+    setHistoryLoading(false);
     if (!enabled || !symbol) {
       setLoading(false);
       return;
@@ -176,7 +181,7 @@ export function useChartData({
     const covers = (s: Series) =>
       s.bars.length >= need || s.requested >= want || s.bars.length < s.requested;
     // The series in memory may be deeper than the depth asked for now.
-    const newest = (bars: Bar[]) => (bars.length > want ? bars.slice(bars.length - want) : bars);
+    const newest = (bars: Bar[]) => bars;
 
     const known = recall(sym, tf);
     if (known && covers(known)) {
@@ -250,7 +255,7 @@ export function useChartData({
    * bars at a readable zoom ("latest"); a rewind keeps the view ("keep").
    */
   const showReplayBars = useCallback(
-    (bars: Bar[], view: ViewPolicy = "latest", context?: { symbol: string; timeframe: Timeframe }) => {
+    (bars: Bar[], view: ViewPolicy = "latest", context?: { symbol: string; timeframe: Timeframe; has_more_before?: boolean }) => {
       // Replay takes ownership immediately, including before React cleans up a
       // live request that was still loading when the start reply arrived.
       generation.current++;
@@ -262,6 +267,7 @@ export function useChartData({
         view,
         complete: true,
         source: "replay",
+        hasMoreHistory: context?.has_more_before ?? true,
         seq: now.seq + 1,
       });
     },
@@ -281,6 +287,32 @@ export function useChartData({
     },
     [put],
   );
+
+  const loadOlder = useCallback(async () => {
+    const at = shown.current;
+    if (older.current || at.source !== "live" || !at.symbol || !at.bars.length || at.hasMoreHistory === false) return;
+    const request = {};
+    const token = generation.current;
+    const boundary = at.bars[0].time;
+    older.current = request;
+    setHistoryLoading(true);
+    try {
+      const page = await api.history(at.symbol, at.timeframe, boundary);
+      const now = shown.current;
+      if (token !== generation.current || now.source !== "live" || now.symbol !== at.symbol || now.timeframe !== at.timeframe) return;
+      const bars = prependBars(now.bars, page.bars);
+      remember(at.symbol, at.timeframe, bars, bars.length);
+      put({ ...now, bars, view: "keep", hasMoreHistory: page.has_more, seq: now.seq + 1 });
+      latest.current.onSettled?.();
+    } catch (err) {
+      if (token === generation.current) latest.current.onError((err as Error).message, shown.current);
+    } finally {
+      if (older.current === request) {
+        older.current = null;
+        setHistoryLoading(false);
+      }
+    }
+  }, [put]);
 
   /**
    * Bring the newest few candles in line with the terminal's own.
@@ -327,5 +359,5 @@ export function useChartData({
     if (sym) prefetch(sym, tf, depth);
   }, []);
 
-  return { frame, loading, showReplayBars, appendReplayBars, prefetchInterval, syncTail };
+  return { frame, loading, historyLoading, loadOlder, showReplayBars, appendReplayBars, prefetchInterval, syncTail };
 }

@@ -6,14 +6,13 @@
 // jump back a day / week / month… in one click, type an exact date, or let chance
 // choose. Nothing has to be "applied" first.
 //
-// A replay can start anywhere in the history the chart has loaded (the bar count
-// at the bottom left says how far back that is): those bars are already stored, so
-// starting never turns into a long download from the broker. Starts older than
-// that are switched off here and say why.
+// Dates outside the visible candles are fetched on demand. The chart's current
+// window is context for random starts, not a limit on a requested date.
 
 import { useState, type ReactNode } from "react";
 import { useDismiss } from "../lib/hooks";
 import { TF } from "../lib/timeframes";
+import { replayDate } from "../lib/replayDate";
 import type { Timeframe } from "../lib/types";
 import { CalendarIcon, CloseIcon, DiceIcon, ReplayIcon, ScissorsIcon } from "./Icons";
 
@@ -44,8 +43,6 @@ const BACK: { label: string; title: string; seconds: number }[] = [
 /** "2026-09-14" for the date input, from a chart time (server time carried as UTC). */
 const isoDay = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 10);
 
-const TOO_OLD = "Older than the history loaded on the chart — raise the bar count at the bottom left";
-
 export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starting, profileMenu, onStartAt, onCancel }: Props) {
   const [dateOpen, setDateOpen] = useState(false);
   const popRef = useDismiss<HTMLDivElement>(() => setDateOpen(false), dateOpen);
@@ -60,23 +57,17 @@ export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starti
     setDateOpen((v) => !v);
   };
 
-  const dateValid =
-    day !== "" &&
-    newestTime != null &&
-    oldestTime != null &&
-    day <= isoDay(newestTime) &&
-    day >= isoDay(oldestTime);
-  const startOnDate = () => {
-    if (!dateValid) return;
-    const [h, m, s] = (intraday ? clock : "00:00").split(":").map(Number);
-    const [y, mo, d] = day.split("-").map(Number);
+  const requested = replayDate(day, clock, intraday);
+  const dateValid = requested != null && newestTime != null && requested <= newestTime;
+  const startOnDate = (form: HTMLFormElement) => {
+    // Read the submitted fields as well as keeping React's preview state: native
+    // date widgets can commit their final edit as focus leaves the field.
+    const data = new FormData(form);
+    const selected = replayDate(String(data.get("date") ?? ""), String(data.get("time") ?? "00:00"), intraday);
+    if (selected == null || newestTime == null || selected > newestTime) return;
     setDateOpen(false);
-    onStartAt(Date.UTC(y, mo - 1, d, h || 0, m || 0, s || 0) / 1000);
+    onStartAt(selected);
   };
-
-  /** Whether a start this far back still lies inside the loaded history. */
-  const reachable = (seconds: number) =>
-    newestTime != null && oldestTime != null && newestTime - seconds >= oldestTime;
 
   const random = () => {
     if (newestTime == null || oldestTime == null || newestTime <= oldestTime) return;
@@ -110,8 +101,8 @@ export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starti
           <button
             key={b.label}
             className="rp-chip"
-            title={reachable(b.seconds) ? b.title : TOO_OLD}
-            disabled={!ready || !reachable(b.seconds)}
+            title={b.title}
+            disabled={!ready}
             onClick={() => newestTime != null && onStartAt(newestTime - b.seconds)}
           >
             {b.label}
@@ -127,15 +118,16 @@ export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starti
               className="rp-date"
               onSubmit={(e) => {
                 e.preventDefault();
-                startOnDate();
+                startOnDate(e.currentTarget);
               }}
             >
               <label>
                 Date
                 <input
                   type="date"
-                  value={day}
-                  min={oldestTime != null ? isoDay(oldestTime) : undefined}
+                  name="date"
+                  defaultValue={day}
+                  required
                   max={newestTime != null ? isoDay(newestTime) : undefined}
                   onChange={(e) => setDay(e.target.value)}
                   autoFocus
@@ -144,12 +136,14 @@ export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starti
               {intraday && (
                 <label>
                   Time
-                  <input type="time" step={TF[timeframe].seconds < 60 ? 1 : 60} value={clock} onChange={(e) => setClock(e.target.value)} />
+                  <input type="time" name="time" step={TF[timeframe].seconds < 60 ? 1 : 60} defaultValue={clock} onChange={(e) => setClock(e.target.value)} />
                 </label>
               )}
               {oldestTime != null && newestTime != null && (
                 <small className={day !== "" && !dateValid ? "rp-date-note warn" : "rp-date-note"}>
-                  History loaded: {isoDay(oldestTime)} → {isoDay(newestTime)}
+                  {day !== "" && !dateValid ? "Choose a past date and time." : requested != null && requested < oldestTime
+                    ? "Older history will load when you start."
+                    : "Choose any past date. History loads automatically."}
                 </small>
               )}
               <button type="submit" className="rp-go" disabled={!dateValid}>

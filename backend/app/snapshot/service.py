@@ -43,6 +43,9 @@ def build_snapshot(
         start=request.start,
         end=request.end,
     )
+    # Broker ranges can include the candle opening at ``end``; snapshots use [start, end).
+    first, until = request.start.timestamp(), request.end.timestamp()
+    bars = [bar for bar in bars if first <= bar.time < until]
     if not bars:
         return SnapshotResponse(
             symbol=request.symbol,

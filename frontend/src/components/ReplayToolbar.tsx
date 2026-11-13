@@ -94,7 +94,7 @@ export function ReplayToolbar({
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useDismiss<HTMLSpanElement>(() => setMenuOpen(false), menuOpen);
-  const atEnd = state.index >= state.total - 1;
+  const atEnd = state.index >= state.total - 1 && !state.has_more_after;
   const done = state.total > 1 ? (state.index / (state.total - 1)) * 100 : 100;
 
   const barRef = useRef<HTMLDivElement>(null);

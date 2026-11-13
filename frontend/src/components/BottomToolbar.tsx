@@ -1,17 +1,17 @@
 // The strip under the chart, in the place TradingView puts its range buttons.
 //
-//   [ 20,000 bars ▾ ]  | 2023-08-01 → 2026-10-01                         ↔  12:08:52 UTC+3
+//   [ 20,000 bars ]  | 2023-08-01 → 2026-10-01                         ↔  12:08:52 UTC+3
 //
-// * the bar count is how much history is loaded (the one history control);
+// * the bar count grows as older history is loaded while scrolling;
 // * the dates are the window actually on the chart;
 // * the clock runs in the same time zone as the chart's time axis — the broker's
 //   server time — so the two always agree;
 // * the arrows fit every loaded bar into view (same as the F key).
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { formatInt, formatUtcOffset } from "../lib/format";
-import { useDismiss, useNow } from "../lib/hooks";
-import { CalendarIcon, ChevronDown, FitIcon } from "./Icons";
+import { useNow } from "../lib/hooks";
+import { CalendarIcon, FitIcon } from "./Icons";
 
 export interface RangeInfo {
   from: number | null;
@@ -21,12 +21,9 @@ export interface RangeInfo {
 
 interface Props {
   range: RangeInfo;
-  /** History depth currently requested. */
-  barCount: number;
-  barSteps: number[];
-  onBarCount: (count: number) => void;
-  /** Replay loads its own window, so the depth cannot be changed during it. */
-  depthLocked: boolean;
+  historyLoading: boolean;
+  hasMoreHistory: boolean;
+  onLoadOlder: () => void;
   /** Hours the chart's clock is ahead of UTC (broker server time); null = this machine's offset. */
   utcOffsetHours: number | null;
   onFit: () => void;
@@ -42,16 +39,13 @@ function fmtDate(ts: number | null): string {
 
 export function BottomToolbar({
   range,
-  barCount,
-  barSteps,
-  onBarCount,
-  depthLocked,
+  historyLoading,
+  hasMoreHistory,
+  onLoadOlder,
   utcOffsetHours,
   onFit,
 }: Props) {
   const now = useNow(1000);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useDismiss<HTMLDivElement>(() => setMenuOpen(false), menuOpen);
 
   const offset = utcOffsetHours ?? -new Date(now).getTimezoneOffset() / 60;
 
@@ -63,42 +57,15 @@ export function BottomToolbar({
     return `${hh}:${mm}:${ss} ${formatUtcOffset(offset)}`;
   }, [now, offset]);
 
-  const loaded = range.bars ?? barCount;
+  const loaded = range.bars ?? 0;
 
   return (
     <div className="tv-range">
       <div className="tv-range-left">
-        <div className="tv-anchor" ref={menuRef}>
-          <button
-            className={menuOpen ? "tv-rbtn active" : "tv-rbtn"}
-            title={depthLocked ? "Replay uses the dates you picked" : "How much history to load"}
-            disabled={depthLocked}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((v) => !v)}
-          >
-            <span>{formatInt(loaded)} bars</span>
-            {!depthLocked && <ChevronDown size={16} />}
-          </button>
-          {menuOpen && (
-            <div className="tv-menu up" role="menu">
-              <div className="tv-menu-title">HISTORY DEPTH</div>
-              {barSteps.map((n) => (
-                <button
-                  key={n}
-                  role="menuitem"
-                  className={n === barCount ? "tv-menu-item active" : "tv-menu-item"}
-                  onClick={() => {
-                    onBarCount(n);
-                    setMenuOpen(false);
-                  }}
-                >
-                  {formatInt(n)} bars
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <button className="tv-rbtn" onClick={onLoadOlder} disabled={historyLoading || !hasMoreHistory}
+          title="Load older candles — also loaded automatically as you scroll left" aria-live="polite">
+          {formatInt(loaded)} bars{historyLoading ? " · Loading older…" : !hasMoreHistory ? " · Start of available history" : ""}
+        </button>
 
         <span className="tv-sep" />
 

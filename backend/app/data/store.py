@@ -121,6 +121,7 @@ class BarStore:
         # Holes already tried this run, so a stretch the broker has no data for is
         # asked about once instead of on every request.
         self._tried_gaps: set[tuple[str, str, int, int]] = set()
+        self._range_reads: set[tuple[str, str, int, int]] = set()
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
 
@@ -341,10 +342,20 @@ class BarStore:
             self._fetch_range(broker, symbol, timeframe, start_ts, end_ts)
         else:
             if start_ts < cov.oldest:
-                self._fetch_range(broker, symbol, timeframe, start_ts, cov.oldest)
+                self._fetch_range(broker, symbol, timeframe, start_ts, min(end_ts, cov.oldest))
             if end_ts > cov.newest:
-                self._fetch_range(broker, symbol, timeframe, cov.newest, end_ts)
+                self._fetch_range(broker, symbol, timeframe, max(start_ts, cov.newest), end_ts)
 
+        bars = self.read(symbol, timeframe, start=start_ts, end=end_ts)
+        # Old replay pages and the live tail may be two separate islands. Global
+        # min/max coverage does not prove the requested dates have been fetched.
+        edges = [(start_ts, end_ts)] if not bars else [
+            (start_ts, bars[0].time), (bars[-1].time, end_ts),
+        ]
+        step = _TF_SECONDS[timeframe]
+        for first, last in edges:
+            if (not bars or last - first > step) and (symbol, timeframe.value, first, last) not in self._range_reads:
+                self._fetch_range(broker, symbol, timeframe, first, last)
         bars = self.read(symbol, timeframe, start=start_ts, end=end_ts)
         if self._fill_gaps(broker, symbol, timeframe, bars):
             bars = self.read(symbol, timeframe, start=start_ts, end=end_ts)
@@ -359,11 +370,12 @@ class BarStore:
         end_ts: int,
     ) -> int:
         """Fetch and store a single [start_ts, end_ts] window from the broker."""
-        if end_ts <= start_ts:
+        if end_ts < start_ts:
             return 0
         start = datetime.fromtimestamp(start_ts, tz=timezone.utc)
         end = datetime.fromtimestamp(end_ts, tz=timezone.utc)
         bars = broker.get_bars(symbol, timeframe, start=start, end=end)
+        self._range_reads.add((symbol, timeframe.value, start_ts, end_ts))
         return self.upsert(symbol, timeframe, bars)
 
     def _backfill(

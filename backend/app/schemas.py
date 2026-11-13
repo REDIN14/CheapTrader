@@ -91,6 +91,11 @@ class Bar(BaseModel):
     real_volume: int = 0
 
 
+class BarPage(BaseModel):
+    bars: list[Bar]
+    has_more: bool
+
+
 class Tick(BaseModel):
     """A single price tick. ``time`` is a UTC epoch second."""
 
@@ -387,6 +392,8 @@ class ReplayState(BaseModel):
     # the UI can say what was loaded rather than only what is visible at the cursor.
     first_time: int = 0
     last_time: int = 0
+    has_more_before: bool = False
+    has_more_after: bool = False
 
 
 class ReplayAccount(BaseModel):

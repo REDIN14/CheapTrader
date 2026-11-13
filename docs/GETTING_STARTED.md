@@ -85,6 +85,7 @@ Several brokers installed? CheapTrader takes the one that is running, else the o
 | Pick a symbol | click the symbol name at the top left; the list icon at the right edge is the watchlist |
 | Change the interval | `1m` ... `D` in the top bar |
 | Zoom and move | wheel to zoom, drag to pan, drag an axis to stretch it, `F` fits the chart |
+| Load older history | scroll left; older candles load automatically and stay in place |
 | Right-click the chart | copy a price, place an order at that price, set a stop loss or take profit there |
 | Drawing tools | the bar at the left of the chart: see the [drawing guide](DRAWINGS.md) |
 | Indicators | **Indicators** in the top bar, and your own in Python: see the [indicator guide](INDICATORS.md) |

@@ -13,7 +13,7 @@ import { foldTicks } from "./lib/liveBar";
 import { useServerClock } from "./lib/serverClock";
 import { METATRADER_STEP, RESUME_KEY, resumeStep } from "./lib/tour";
 import { TF } from "./lib/timeframes";
-import { indicatorCount, plotsFrom } from "./lib/indicatorDepth";
+import { plotsFrom } from "./lib/indicatorDepth";
 import { paramText } from "./lib/indicatorParams";
 import type { Drawing } from "./lib/drawings";
 import { useChartData, type ChartFrame } from "./lib/useChartData";
@@ -104,10 +104,8 @@ function settleOverrides(all: Record<string, LevelOverride>, ticket: number, seq
   return next;
 }
 
-// How much history to show. The persistent store backfills this once, then
-// serves it locally; the user can raise it to load even deeper history.
-const DEFAULT_BARS = 20_000;
-const BAR_STEPS = [5_000, 10_000, 20_000, 50_000, 100_000];
+// The opening page; scrolling loads older pages without a total depth limit.
+const INITIAL_BARS = 1_500;
 
 const PLOT_COLORS = ["#2962ff", "#ff9800", "#e91e63", "#00bcd4", "#8bc34a", "#9c27b0"];
 
@@ -135,7 +133,7 @@ export default function App() {
   const [symbols, setSymbols] = useState<Symbol[]>([]);
   const [symbol, setSymbol] = usePersistentState<string | null>("symbol", null);
   const [timeframe, setTimeframe] = usePersistentState<Timeframe>("timeframe", "H1");
-  const [barCount, setBarCount] = usePersistentState<number>("barCount", DEFAULT_BARS);
+  const barCount = INITIAL_BARS;
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   // The limit / stop orders that wait for their price (live trading; a replay has none).
@@ -348,6 +346,8 @@ export default function App() {
   const {
     frame,
     loading: barsLoading,
+    historyLoading: liveHistoryLoading,
+    loadOlder: loadOlderLive,
     showReplayBars,
     appendReplayBars,
     prefetchInterval,
@@ -362,6 +362,11 @@ export default function App() {
     onSettled: onBarsSettled,
   });
   chartBridge.current = { show: showReplayBars, append: appendReplayBars };
+
+  const loadOlder = useCallback(() => {
+    if (replayActive) void replay.loadOlder();
+    else void loadOlderLive();
+  }, [replayActive, replay.loadOlder, loadOlderLive]);
 
   // -- the live market --------------------------------------------------------------------
   // Every tick of the symbol, and the account and positions whenever they change, are
@@ -1223,17 +1228,17 @@ export default function App() {
     [setActiveIndicators],
   );
 
-  // Run active indicators whenever they, the symbol, the timeframe or the depth change. They are run over as many
-  // bars as the chart shows (its history depth), and during a replay over every bar back to the replay's first
-  // candle, so that their lines reach as far back as the candles do (see lib/indicatorDepth.ts).
-  const replayFirst = frame.source === "replay" && bars.length ? bars[0].time : 0;
+  // Indicators follow the actual historical window, including pages loaded by
+  // scrolling. An old replay must never run its lines over the live tail instead.
+  const indicatorFirst = bars[0]?.time ?? 0;
+  const indicatorLast = frame.source === "replay" ? replay.state?.last_time ?? 0 : bars[bars.length - 1]?.time ?? 0;
   useEffect(() => {
-    if (!symbol || activeIndicators.length === 0) {
+    if (!symbol || frame.symbol !== symbol || frame.timeframe !== timeframe || !indicatorFirst || !indicatorLast || activeIndicators.length === 0) {
       setIndicatorSet(NO_INDICATORS);
       return;
     }
     const key = `${symbol}|${timeframe}`;
-    const count = indicatorCount(barCount, replayFirst, Date.now() / 1000, TF[timeframe].seconds);
+    const count = Math.max(1, bars.length);
     let cancelled = false;
     (async () => {
       const plots: IndicatorPlot[] = [];
@@ -1243,7 +1248,7 @@ export default function App() {
       // They run side by side (each one is a process of its own on the server: over this many bars it is the
       // wait that adds up otherwise), and are put on the chart in the order they were added.
       const runs = activeIndicators.map((id) =>
-        indicatorApi.run(id, symbol, timeframe, count).then(
+        indicatorApi.run(id, symbol, timeframe, count, { start: indicatorFirst, end: indicatorLast }).then(
           (result) => ({ id, result }),
           (err: unknown) => ({ id, err }),
         ),
@@ -1292,7 +1297,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [symbol, timeframe, activeIndicators, indicatorVersion, barCount, replayFirst, setActiveIndicators]);
+  }, [symbol, timeframe, frame.symbol, frame.timeframe, activeIndicators, indicatorVersion, indicatorFirst, indicatorLast, setActiveIndicators]);
 
   // Values computed for another interval than the candles on screen would sit on
   // the wrong bars. Until the right ones arrive the plots keep their shape (so the
@@ -1721,6 +1726,7 @@ export default function App() {
                 onLegend={setLegend}
                 onBarClick={onBarClick}
                 onHover={replay.mode === "picking" ? setHover : undefined}
+                onHistoryNeeded={loadOlder}
               />
                 )}
               </ChartBoundary>
@@ -1842,10 +1848,9 @@ export default function App() {
 
             <BottomToolbar
               range={rangeInfo}
-              barCount={barCount}
-              barSteps={BAR_STEPS}
-              onBarCount={setBarCount}
-              depthLocked={replayActive || replayPicking}
+              historyLoading={replayActive ? replay.historyLoading : liveHistoryLoading}
+              hasMoreHistory={replayActive ? replay.state?.has_more_before !== false : frame.hasMoreHistory !== false}
+              onLoadOlder={loadOlder}
               utcOffsetHours={clock.offsetHours}
               onFit={resetView}
             />

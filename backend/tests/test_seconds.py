@@ -29,6 +29,7 @@ def adapter(ticks: list[dict]):
     broker._connected = True
     broker._mt5 = SimpleNamespace(
         COPY_TICKS_ALL=0, copy_ticks_range=copy, last_error=lambda: (1, "missing history"),
+        copy_ticks_from=lambda *args: ticks[:1],
         symbol_info=lambda _: SimpleNamespace(point=0.01),
         symbol_info_tick=lambda _: SimpleNamespace(time=ticks[-1]["time"] if ticks else 0),
     )
@@ -81,6 +82,13 @@ def test_sparse_tick_history_extends_backwards_to_get_the_requested_candle_count
     bars = broker.get_bars("EURUSD", Timeframe.S30, count=2)
     assert [b.time for b in bars] == [0, 180]
     assert len(calls) > 1
+
+
+def test_seconds_paging_crosses_a_long_closure_instead_of_hitting_a_retry_limit() -> None:
+    broker, calls = adapter([tick(0, 10), tick(2_000_000_000, 11)])
+    bars = broker.get_bars("EURUSD", Timeframe.S1, count=2, end=date(900_000))
+    assert [b.time for b in bars] == [0]
+    assert len(calls) > 5 and all(b - a <= 3600 for a, b in calls)
 
 
 def test_missing_tick_history_reports_the_broker_error() -> None:

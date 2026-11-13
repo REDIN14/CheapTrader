@@ -39,6 +39,7 @@ interface Props {
   onBarClick?: (time: number) => void;
   /** The bar under the pointer, or null once it leaves the candles. */
   onHover?: (hover: HoverInfo | null) => void;
+  onHistoryNeeded?: () => void;
 }
 
 /** How far the candles dim while the next ones load (keep in step with .chart.is-loading). */
@@ -74,6 +75,7 @@ export function Chart({
   onLegend,
   onBarClick,
   onHover,
+  onHistoryNeeded,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<ChartHandle | null>(null);
@@ -83,6 +85,8 @@ export function Chart({
   const legendRef = useRef(onLegend);
   const clickRef = useRef(onBarClick);
   const hoverRef = useRef(onHover);
+  const historyRef = useRef(onHistoryNeeded);
+  historyRef.current = onHistoryNeeded;
   dragRef.current = onLineDrag;
   dragEndRef.current = onLineDragEnd;
   geometryRef.current = onGeometry;
@@ -106,12 +110,14 @@ export function Chart({
     const offLegend = handle.onLegend((values) => legendRef.current?.(values));
     const offClick = handle.onClick((time) => clickRef.current?.(time));
     const offHover = handle.onHover((hover) => hoverRef.current?.(hover));
+    const offHistory = handle.onHistoryNeeded(() => historyRef.current?.());
     return () => {
       offDrag();
       offDragEnd();
       offLegend();
       offClick();
       offHover();
+      offHistory();
       handle.destroy();
       handleRef.current = null;
       if (viewHintRef) viewHintRef.current = null;

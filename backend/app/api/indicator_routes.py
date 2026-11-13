@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.data.history import moment
 from app.indicators.needs import MAX_SHOWN_BARS, bars_to_load, declared_bars
 from app.indicators.registry import IndicatorError
 from app.indicators.sandbox import run_indicator
@@ -60,8 +61,10 @@ def run(
     symbol: str,
     timeframe: Timeframe = Timeframe.H1,
     count: int = Query(default=500, ge=1, le=MAX_SHOWN_BARS),
+    start: int | None = None,
+    end: int | None = None,
 ) -> IndicatorResult:
-    """Run an indicator over the newest ``count`` bars; its lines come back for those bars.
+    """Run over a historical start/end window, or the newest ``count`` bars.
 
     An indicator that says it needs more (``NEEDS_BARS`` at the top of its code, see ``app/indicators/needs.py``) is run
     over more, and the older bars only warm it up: no line comes back for them.
@@ -71,9 +74,21 @@ def run(
     if spec is None:
         raise HTTPException(status_code=404, detail=f"indicator {indicator_id} not found")
 
-    bars = state.cache.get_bars(
-        state.broker.adapter, symbol, timeframe, count=bars_to_load(count, declared_bars(spec.code))
-    )
+    show_from = None
+    if start is not None and end is not None:
+        if end < start:
+            raise HTTPException(status_code=422, detail="The indicator window ends before it starts.")
+        bars = state.cache.ensure_range(state.broker.adapter, symbol, timeframe, moment(start), moment(end))
+        needed = declared_bars(spec.code) or 0
+        if bars and len(bars) < needed:
+            warmup = state.cache.history_before(state.broker.adapter, symbol, timeframe, bars[0].time, needed - len(bars))
+            bars = warmup.bars + bars
+        show_from = start
+    else:
+        bars = state.cache.get_bars(
+            state.broker.adapter, symbol, timeframe, count=bars_to_load(count, declared_bars(spec.code))
+        )
+        show_from = bars[-count].time if len(bars) > count else None
     result = run_indicator(
         indicator_id=spec.id,
         name=spec.name,
@@ -83,7 +98,7 @@ def run(
         overlay=spec.overlay,
         pane=spec.pane,
         settings=state.settings,
-        show_from=bars[-count].time if len(bars) > count else None,
+        show_from=show_from,
     )
     result.params = dict(spec.params)  # the legend shows them after the name
     return result

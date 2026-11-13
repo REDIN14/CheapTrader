@@ -197,12 +197,16 @@ class MockAdapter(BrokerAdapter):
         digits = self._digits(symbol)
 
         if start is not None and end is not None:
-            start_ts = int(start.timestamp())
+            start_ts = -(-int(start.timestamp()) // step) * step
             end_ts = int(end.timestamp())
-            n = max(1, (end_ts - start_ts) // step)
+            n = max(0, (end_ts - start_ts) // step + 1)
             first_ts = start_ts
+        elif end is not None:
+            end_ts = int(end.timestamp()) // step * step
+            first_ts = end_ts - (count - 1) * step
+            n = count
         else:
-            end_ts = int(datetime.now(timezone.utc).timestamp())
+            end_ts = int(datetime.now(timezone.utc).timestamp()) // step * step + step
             first_ts = end_ts - count * step
             n = count
 

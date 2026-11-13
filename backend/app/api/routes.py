@@ -13,6 +13,7 @@ from app.schemas import (
     AccountInfo,
     AccountReport,
     Bar,
+    BarPage,
     ModifyOrderRequest,
     ModifyRequest,
     OrderRequest,
@@ -102,6 +103,17 @@ def get_bars(
     try:
         return state.cache.get_bars(state.broker.adapter, symbol, timeframe, count=count)
     except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/bars/history", response_model=BarPage)
+def history_bars(symbol: str, timeframe: Timeframe, before: int,
+                 count: int = Query(default=1500, ge=1, le=20_000)) -> BarPage:
+    """Another page before the oldest visible candle. The series has no total cap."""
+    state = get_state()
+    try:
+        return state.cache.history_before(state.broker.adapter, symbol, timeframe, before, count)
+    except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

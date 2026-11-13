@@ -21,6 +21,7 @@ import {
 } from "lightweight-charts";
 
 import { barAt, canPatchTail, firstDifference, nearestIndex } from "./barMath";
+import { needsHistory } from "./history";
 import { loadPersisted, savePersisted } from "./persist";
 import type { Bar } from "./types";
 
@@ -157,6 +158,7 @@ export type ChartHandle = {
   onLegend: (handler: LegendHandler) => () => void;
   /** Fired as the pointer moves over the candles, and with null when it leaves them. */
   onHover: (handler: HoverHandler) => () => void;
+  onHistoryNeeded: (handler: () => void) => () => void;
   destroy: () => void;
 };
 
@@ -866,6 +868,18 @@ export function createChartHandle(container: HTMLElement): ChartHandle {
   }
 
   // -- click -------------------------------------------------------------
+  const historyHandlers = new Set<() => void>();
+  let historyFrame = 0;
+  const checkHistory = () => {
+    window.cancelAnimationFrame(historyFrame);
+    historyFrame = window.requestAnimationFrame(() => {
+      if (needsHistory(chart.timeScale().getVisibleLogicalRange(), lastBars.length)) {
+        for (const handler of historyHandlers) handler();
+      }
+    });
+  };
+  chart.timeScale().subscribeVisibleLogicalRangeChange(checkHistory);
+
   const clickHandlers = new Set<ClickHandler>();
   chart.subscribeClick((param) => {
     if (param.time == null) return;
@@ -985,7 +999,14 @@ export function createChartHandle(container: HTMLElement): ChartHandle {
       hoverHandlers.add(handler);
       return () => hoverHandlers.delete(handler);
     },
+    onHistoryNeeded(handler) {
+      historyHandlers.add(handler);
+      checkHistory();
+      return () => historyHandlers.delete(handler);
+    },
     destroy() {
+      window.cancelAnimationFrame(historyFrame);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(checkHistory);
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
       container.removeEventListener("dblclick", onDoubleClick);

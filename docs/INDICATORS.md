@@ -54,11 +54,10 @@ One row per bar, oldest first, indexed `0..n-1`.
 
 ### How many bars `df` holds
 
-`df` holds **as many bars as the chart shows**: its history depth, which is 20,000 bars unless it was
-changed (the bar count at the bottom left of the chart: 5,000 up to 100,000), so that the lines reach
-back as far as the candles do. During a replay it holds every bar back to the replay's first candle.
-(Before version 0.2.3 it was always the newest 500, so a line covered the last few percent of the
-chart and a replay that began further back had none.)
+`df` follows the chart's **actual historical window**. The chart opens with 1,500 candles and loads
+older pages as you scroll left, without a fixed total depth limit. Indicators are rerun for that
+expanded window. A replay uses its own historical dates, including its loaded future candles;
+rendered lines are still clipped at the cursor. The broker's available data determines how far back it goes.
 
 An indicator that needs **more** than that says so with one line at the top level of its file:
 

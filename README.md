@@ -450,16 +450,14 @@ the page sent the change without the id the program wanted in the body.)
 
 ### How many bars an indicator gets
 
-An indicator is run over as many bars as the chart shows: its history depth (the bar count at the bottom left of
-the chart, 20,000 by default, up to 100,000), so its lines reach back as far as the candles do. It used to be run
-over the newest 500 bars only, which left a line on the last few percent of a chart and none at all in a replay that
-began further back. In a replay it is run over every bar back to the replay's first candle (the lines are still
-clipped at the cursor). The indicators of a chart are run side by side.
+Indicators follow the chart's actual historical window, including older pages loaded by scrolling. There is no
+fixed total candle ceiling. A replay runs indicators around its own historical dates, with the lines clipped at
+the cursor. The indicators of a chart are run side by side.
 
 An indicator that needs more than the chart has (an average over 50,000 bars on a chart of 20,000) says so with one
 line at the top level of its code, `NEEDS_BARS = 60_000`: it is then run over that many bars, and only the lines over
-the chart's own bars come back; the older bars warm it up. The most it is ever given is 200,000 bars, and where the
-broker has fewer it gets what there is. The snapshot tool warms an indicator up in the same way. The line is read
+the chart's own bars come back; the older bars warm it up. Where the broker has fewer it gets what there is.
+The snapshot tool also warms indicators up (its count-based requests allow up to 200,000 warm-up bars). The line is read
 without running the code (`backend/app/indicators/needs.py`), so it is a whole number, not something worked out from
 the parameters. The page's part is `frontend/src/lib/indicatorDepth.ts`; the guide is
 [`docs/INDICATORS.md`](docs/INDICATORS.md).
@@ -481,12 +479,11 @@ blanks the chart nor throws your view away:
 * **Your view comes with you.** Same zoom (the same number of candles across). If you
   were at the newest bar you stay there; if you had scrolled back to a date you stay
   on that date.
-* **It is quick.** Only the newest 1,500 bars are requested first (more when you are
-  zoomed far out or scrolled back, enough to reach where you were looking); the full
-  history (the `N bars` setting) follows in the background and replaces them without
-  anything on screen moving. Intervals you have opened are kept in memory (up to ten
-  series), so going back is instant and only needs a small top-up request; pointing
-  at an interval button starts loading it before you click.
+* **History loads as needed.** The chart opens with 1,500 candles and fetches more automatically as you
+  scroll toward its left edge. Existing candles stay in place while older pages arrive. There is no
+  total candle limit in the app; history ends where the broker's available data ends. The bar count
+  at the bottom grows as pages load, and clicking it also loads an older page. Intervals already
+  opened are remembered, and pointing at an interval button starts its initial load before you click.
 * If a load fails the error is shown and the header goes back to the interval the
   chart is still on.
 * A different symbol still starts from a clean chart, so the old symbol's candles
@@ -642,11 +639,10 @@ stays fully visible — and a cut line follows the pointer over the candles, wit
 bar's time and how many bars lie ahead of it; everything to the right is shaded.
 Click a bar and the replay starts there. Or use the bar's one-click starts:
 **1D 1W 1M 3M 1Y** (that far back from the newest bar), **Date** (an exact day, and
-a time on intraday intervals) or **Random**. `Esc` cancels. Starts older than the
-history already loaded on the chart are switched off, with a tooltip saying so — the
-`N bars` setting at the bottom left decides how far back that is — and the date form
-shows the range that is available. Because those bars are already stored, starting
-never turns into a long download from the broker.
+a time on intraday intervals) or **Random**. `Esc` cancels. Any past date can be requested, including
+dates older than the visible candles. The required history is fetched when the replay starts.
+Scrolling left fetches older replay candles without moving its clock or changing the paper account.
+Playback also fetches later candles as it reaches the end of each loaded page.
 
 **Transport bar** (floating over the chart; drag its ⠿ grip to move it out of the
 way of a position's TP / SL buttons, double-click the grip to put it back — the spot
@@ -732,8 +728,8 @@ first bar as on the last.
 
 Limits: paper P&L uses the tick size and tick value the broker reports for the symbol
 (a broker that reports none gets price × lots × contract size, in the instrument's quote
-currency); and a replay only starts inside the history loaded on the chart, as described
-above.
+currency). The available history is determined by the broker and terminal, rather than a fixed
+window in CheapTrader.
 
 Fixed along the way:
 
@@ -756,7 +752,7 @@ Fixed along the way:
   figures were recomputed over the whole history on every poll.
 
 Backend (`/api/replay`): `POST /start` (symbol, timeframe, time → opens a window of
-1,500 bars before that bar and up to 60,000 after it, or 6,000 after it for seconds intervals),
+an initial page of candles on either side, extended as needed), `POST /history` (older replay candles),
 `POST /timeframe?timeframe=S5&lookback=1500` (change candles while keeping the session), `POST /advance?delta=N`,
 `GET /account`, `GET /report`, plus `state`, `bars`, `orders`, `positions`, `trades`
 and `reset-account` (starts the profile in use over). `POST /stop` ends the replay: the

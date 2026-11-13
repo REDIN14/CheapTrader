@@ -234,6 +234,16 @@ def copy_rates_from_pos(symbol: str, timeframe: int, start_pos: int, count: int)
     return np.array([_rate(period, n) for n in range(newest - count + 1, newest + 1)], dtype=_RATE_DTYPE)
 
 
+def copy_rates_from(symbol: str, timeframe: int, date_from, count: int):
+    _history_busy()
+    if not _known(symbol) or timeframe not in _PERIOD:
+        return None
+    period = _PERIOD[timeframe]
+    stamp = date_from.timestamp() if hasattr(date_from, "timestamp") else date_from
+    last = min(int(stamp), int(time.time())) // period
+    return np.array([_rate(period, n) for n in range(last - count + 1, last + 1)], dtype=_RATE_DTYPE)
+
+
 def copy_rates_range(symbol: str, timeframe: int, date_from, date_to):
     _history_busy()
     if not _known(symbol) or timeframe not in _PERIOD:

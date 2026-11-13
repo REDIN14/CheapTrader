@@ -215,3 +215,5 @@ def test_a_snapshot_warms_up_an_indicator_that_says_it_needs_more_bars(tmp_path,
     shown = lines(warmed.id)
     assert len(shown) == 100
     assert shown[0]["time"] == int(start.timestamp()) and shown[-1]["time"] < int(end.timestamp())
+    assert len(seen["bars"]) == 100
+    assert all(int(start.timestamp()) <= bar.time < int(end.timestamp()) for bar in seen["bars"])

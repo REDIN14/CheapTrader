@@ -61,7 +61,7 @@ class BrokerAdapter(ABC):
         start: datetime | None = None,
         end: datetime | None = None,
     ) -> list[Bar]:
-        """Return OHLCV bars, either the most recent ``count`` or a date range."""
+        """Return newest ``count`` bars, a date range, or ``count`` bars ending at ``end``."""
 
     @abstractmethod
     def get_tick(self, symbol: str) -> Tick | None:

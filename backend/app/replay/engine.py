@@ -40,6 +40,8 @@ class ReplayEngine:
     index: int = 0
     speed: float = 1.0
     playing: bool = False
+    has_more_before: bool = False
+    has_more_after: bool = False
     contract_size: float = 100_000.0
     #: What one price step of the instrument is worth for one lot, in the account's currency
     #: (0: not known; the profit is then worked out from the contract size).
@@ -176,6 +178,8 @@ class ReplayEngine:
             cursor_time=self.cursor_time,
             first_time=self.bars[0].time if self.bars else 0,
             last_time=self.bars[-1].time if self.bars else 0,
+            has_more_before=self.has_more_before,
+            has_more_after=self.has_more_after,
         )
 
     # -- controls ----------------------------------------------------------

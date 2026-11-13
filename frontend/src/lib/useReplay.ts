@@ -68,6 +68,8 @@ interface Options {
 export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFailed, showBars, appendBars, onError, onClosed, onEnded }: Options) {
   const [snap, setSnap] = useState<Snapshot>(IDLE);
   const [playing, setPlaying] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const historyRun = useRef<number | null>(null);
   const [switching, setSwitching] = useState(false);
   const switchingRef = useRef(false);
   const changingTimeframe = switching || (snap.mode === "running" && snap.state?.timeframe !== timeframe);
@@ -158,6 +160,8 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
   const exit = useCallback(() => {
     if (snapRef.current.mode !== "off") endOnServer();
     run.current++;
+    historyRun.current = null;
+    setHistoryLoading(false);
     moving.current = false;
     wanted.current = { steps: 0, end: false };
     switchingRef.current = false;
@@ -173,6 +177,8 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
     // This session is over (the next bar chosen begins another one on the same profile).
     if (snapRef.current.mode === "running") endOnServer();
     run.current++;
+    historyRun.current = null;
+    setHistoryLoading(false);
     moving.current = false;
     wanted.current = { steps: 0, end: false };
     switchingRef.current = false;
@@ -208,6 +214,8 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
 
   const changeTimeframe = useCallback(async (next: Timeframe) => {
     const token = ++run.current;
+    historyRun.current = null;
+    setHistoryLoading(false);
     switchingRef.current = true;
     setSwitching(true);
     setPlaying(false);
@@ -242,6 +250,25 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
         moving.current = false;
         switchingRef.current = false;
         setSwitching(false);
+      }
+    }
+  }, [apply, serialize]);
+
+  const loadOlder = useCallback(async () => {
+    const token = run.current;
+    const current = snapRef.current;
+    if (current.mode !== "running" || changingRef.current || current.state?.has_more_before === false || historyRun.current === token) return;
+    historyRun.current = token;
+    setHistoryLoading(true);
+    try {
+      const up = await serialize(() => token === run.current ? replayApi.history() : Promise.resolve(null));
+      if (token === run.current && up) apply(up, token, "keep");
+    } catch (err) {
+      if (token === run.current) calls.current.onError((err as Error).message);
+    } finally {
+      if (historyRun.current === token) {
+        historyRun.current = null;
+        setHistoryLoading(false);
       }
     }
   }, [apply, serialize]);
@@ -306,7 +333,8 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
         let moved: ReplayUpdate | null;
         if (end && st) {
           setPlaying(false);
-          moved = await advance(st.total - 1 - st.index);
+          moved = await advance(Math.max(1, st.total - 1 - st.index));
+          if (moved?.state.has_more_after) wanted.current.end = true;
         } else {
           moved = await advance(steps);
         }
@@ -338,7 +366,7 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
 
   const play = useCallback(() => {
     const st = snapRef.current.state;
-    if (snapRef.current.mode === "running" && st && st.index < st.total - 1 && !changingRef.current) setPlaying(true);
+    if (snapRef.current.mode === "running" && st && (st.index < st.total - 1 || st.has_more_after) && !changingRef.current) setPlaying(true);
   }, []);
   const pause = useCallback(() => setPlaying(false), []);
   const toggle = useCallback(() => {
@@ -363,7 +391,7 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
       const began = performance.now();
       const up = await advance(perTick);
       if (!alive) return;
-      if (!up || up.state.index >= up.state.total - 1) {
+      if (!up || (up.state.index >= up.state.total - 1 && !up.state.has_more_after)) {
         setPlaying(false); // the end of the window (or a failure)
         return;
       }
@@ -447,6 +475,8 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
       trades: snap.trades,
       playing,
       changingTimeframe,
+      historyLoading,
+      loadOlder,
       speed,
       report,
       reportOpen,
@@ -469,6 +499,8 @@ export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFa
       snap,
       playing,
       changingTimeframe,
+      historyLoading,
+      loadOlder,
       speed,
       report,
       reportOpen,

@@ -40,6 +40,11 @@ export interface Bar {
   real_volume: number;
 }
 
+export interface BarPage {
+  bars: Bar[];
+  has_more: boolean;
+}
+
 export interface Tick {
   time: number;
   bid: number;
@@ -222,6 +227,8 @@ export interface ReplayState {
   /** First and last bar of the loaded window (0 when it is empty). */
   first_time: number;
   last_time: number;
+  has_more_before?: boolean;
+  has_more_after?: boolean;
 }
 
 export interface BacktestMetrics {

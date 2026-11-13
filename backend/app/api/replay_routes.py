@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from bisect import bisect_right
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.data.history import PAGE_BARS
 from app.performance import symbol_stats
 from app.replay.engine import ReplayEngine
 from app.schemas import (
@@ -109,47 +109,25 @@ def load(
     return engine.state()
 
 
-#: Bars per day-of-calendar slack when sizing a window: markets close at weekends
-#: and holidays, so a span of N bars covers more than N × the bar length.
-_CALENDAR_SLACK = 1.6
-
-
 def _window(
     symbol: str, timeframe: Timeframe, time: int, lookback: int, lookahead: int
-) -> list[Bar]:
-    """Load a timeframe-sized window around a historical cursor, never the live tail."""
+) -> tuple[list[Bar], int, bool, bool]:
+    """A page on either side of any historical date; scrolling/playing loads more."""
     state = get_state()
-    step = TIMEFRAME_SECONDS[timeframe]
-    first_ts = max(0, time - int(max(1, lookback) * step * _CALENDAR_SLACK))
-    newest_ts = int(datetime.now(timezone.utc).timestamp()) + 2 * 86_400
-    last_ts = max(time + step, min(newest_ts, time + int(lookahead * step * _CALENDAR_SLACK)))
     try:
-        bars = state.cache.ensure_range(
-            state.broker.adapter,
-            symbol,
-            timeframe,
-            datetime.fromtimestamp(first_ts, tz=timezone.utc),
-            datetime.fromtimestamp(last_ts, tz=timezone.utc),
+        history = state.cache.history_before(
+            state.broker.adapter, symbol, timeframe, time + 1, lookback + 1,
         )
-        # Calendar slack normally covers weekends. Extend the history if a holiday
-        # or a sparse instrument still left fewer candles than were requested.
-        for _ in range(4):
-            before = bisect_right([b.time for b in bars], time) - 1
-            if before >= lookback or first_ts == 0:
-                break
-            first_ts = max(0, first_ts - int(max(lookback - before, 100) * step * _CALENDAR_SLACK))
-            bars = state.cache.ensure_range(
-                state.broker.adapter,
-                symbol,
-                timeframe,
-                datetime.fromtimestamp(first_ts, tz=timezone.utc),
-                datetime.fromtimestamp(last_ts, tz=timezone.utc),
-            )
+        if not history.bars:
+            raise HTTPException(status_code=409, detail=f"The broker has no {symbol} candles at that date.")
+        future = state.cache.history_after(
+            state.broker.adapter, symbol, timeframe, history.bars[-1].time, lookahead,
+        )
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if not bars:
-        raise HTTPException(status_code=409, detail=f"No {symbol} bars to replay around that time.")
-    return bars
+    return history.bars + future.bars, len(history.bars) - 1, history.has_more, future.has_more
 
 
 @router.post("/start", response_model=ReplayUpdate)
@@ -172,20 +150,14 @@ def start(
     """
     state = get_state()
     spec = _spec(symbol)
-    lookahead = lookahead if lookahead is not None else (6000 if TIMEFRAME_SECONDS[timeframe] < 60 else 60_000)
-    bars = _window(symbol, timeframe, time, lookback, lookahead)
-
-    # The window above was sized in calendar time, with room to spare for weekends;
-    # trim it to exactly the bars asked for around the start.
-    probe = ReplayEngine.from_bars(symbol, timeframe, bars, **spec)
-    at = probe.nearest_index(time)
-    bars = bars[max(0, at - lookback) : at + lookahead + 1]
+    bars, at, more_before, more_after = _window(symbol, timeframe, time, lookback, lookahead or PAGE_BARS)
 
     # The replay that was running is over: its paper account closes what is open and keeps the result.
     # The new one trades on the profile the user chose, balance and history included.
     state.end_replay()
     engine = ReplayEngine.from_bars(symbol, timeframe, bars, paper=state.profiles.active(), **spec)
-    engine.begin(engine.nearest_index(time))
+    engine.begin(at)
+    engine.has_more_before, engine.has_more_after = more_before, more_after
     state.replay = engine
     return _update(engine, engine.visible_bars(), [], reset=True)
 
@@ -200,12 +172,8 @@ def change_timeframe(
     engine = _engine()
     if timeframe == engine.timeframe:
         return _update(engine, engine.visible_bars(), [], reset=True)
-    lookahead = lookahead if lookahead is not None else (6000 if TIMEFRAME_SECONDS[timeframe] < 60 else 60_000)
     time = engine.cursor_time
-    bars = _window(engine.symbol, timeframe, time, lookback, lookahead)
-    at = bisect_right([b.time for b in bars], time) - 1
-    if at < 0:
-        raise HTTPException(status_code=409, detail="No candles at or before the replay cursor.")
+    bars, at, more_before, more_after = _window(engine.symbol, timeframe, time, lookback, lookahead or PAGE_BARS)
     first = max(0, at - lookback)
     # Load the detail of the candle containing the clock. Native intervals use
     # minute history, with seconds only for the minute containing a subminute
@@ -246,7 +214,25 @@ def change_timeframe(
             raise HTTPException(status_code=409, detail="No candles around the replay cursor.")
     # Do not begin/end a session or play the newly loaded history through SL/TP.
     # Loading must succeed before touching the current replay, so a failure keeps it usable.
-    engine.change_timeframe(timeframe, bars[first : at + lookahead + 1], at - first, minutes)
+    engine.change_timeframe(timeframe, bars[first:], at - first, minutes)
+    engine.has_more_before, engine.has_more_after = more_before, more_after
+    return _update(engine, engine.visible_bars(), [], reset=True)
+
+
+@router.post("/history", response_model=ReplayUpdate)
+def older_history(count: int = Query(default=PAGE_BARS, ge=1, le=20_000)) -> ReplayUpdate:
+    """Prepend another page without moving the replay or touching its paper account."""
+    engine = _engine()
+    if engine.bars and engine.has_more_before:
+        state = get_state()
+        try:
+            page = state.cache.history_before(state.broker.adapter, engine.symbol, engine.timeframe, engine.bars[0].time, count)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        older = [b for b in page.bars if b.time < engine.bars[0].time]
+        engine.bars = older + engine.bars
+        engine.index += len(older)
+        engine.has_more_before = bool(older) and page.has_more
     return _update(engine, engine.visible_bars(), [], reset=True)
 
 
@@ -269,6 +255,16 @@ def advance(delta: int = Query(default=1, ge=-1_000_000, le=1_000_000)) -> Repla
     price, the headline numbers, and any trade a stop or target closed on the way.
     """
     engine = _engine()
+    if delta >= 0:
+        state = get_state()
+        while engine.has_more_after and engine.index + max(1, delta) >= engine.total:
+            try:
+                page = state.cache.history_after(state.broker.adapter, engine.symbol, engine.timeframe, engine.bars[-1].time, PAGE_BARS)
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+            more = [b for b in page.bars if b.time > engine.bars[-1].time]
+            engine.bars.extend(more)
+            engine.has_more_after = bool(more) and page.has_more
     before = engine.index
     partial = engine.partial_candle
     moved = engine.advance(delta)

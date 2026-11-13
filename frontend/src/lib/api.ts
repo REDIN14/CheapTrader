@@ -6,6 +6,7 @@ import type {
   PendingOrder,
   BacktestTrade,
   Bar,
+  BarPage,
   DataStat,
   DocInfo,
   DocPage,
@@ -88,6 +89,9 @@ export const api = {
 
   bars: (symbol: string, timeframe: Timeframe, count = 500) =>
     request<Bar[]>(`/api/bars?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&count=${count}`),
+
+  history: (symbol: string, timeframe: Timeframe, before: number, count = 1500) =>
+    request<BarPage>(`/api/bars/history?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&before=${Math.floor(before)}&count=${count}`),
 
   tick: (symbol: string) => request<Tick>(`/api/tick?symbol=${encodeURIComponent(symbol)}`),
 
@@ -220,6 +224,8 @@ export const replayApi = {
   changeTimeframe: (timeframe: Timeframe, lookback = 1500) =>
     request<ReplayUpdate>(`/api/replay/timeframe?timeframe=${timeframe}&lookback=${lookback}`, { method: "POST" }),
 
+  history: () => request<ReplayUpdate>("/api/replay/history", { method: "POST" }),
+
   /** Move the cursor by `delta` bars; the reply holds the bars revealed and the account. */
   advance: (delta = 1) =>
     request<ReplayUpdate>(`/api/replay/advance?delta=${delta}`, { method: "POST" }),
@@ -298,9 +304,9 @@ export const indicatorApi = {
   remove: (id: string) =>
     request<{ ok: boolean }>(`/api/indicators/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
-  run: (id: string, symbol: string, timeframe: Timeframe, count = 500) =>
+  run: (id: string, symbol: string, timeframe: Timeframe, count = 500, window?: { start: number; end: number }) =>
     request<IndicatorResult>(
-      `/api/indicators/${encodeURIComponent(id)}/run?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&count=${count}`,
+      `/api/indicators/${encodeURIComponent(id)}/run?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&count=${Math.min(100_000, count)}${window ? `&start=${window.start}&end=${window.end}` : ""}`,
       { method: "POST" },
     ),
 };
