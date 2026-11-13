@@ -12,6 +12,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+from app.schemas import BarPage  # noqa: E402
 from app.state import get_state  # noqa: E402
 
 
@@ -245,10 +246,10 @@ def test_a_failed_interval_load_leaves_the_replay_usable(monkeypatch, empty: boo
 
         def fail(*args, **kwargs):
             if empty:
-                return []
+                return BarPage(bars=[], has_more=False)
             raise RuntimeError("History unavailable")
 
-        monkeypatch.setattr(get_state().cache, "ensure_range", fail)
+        monkeypatch.setattr(get_state().cache, "history_before", fail)
         response = client.post("/api/replay/timeframe", params={"timeframe": "M5"})
         assert response.status_code == (409 if empty else 502)
         assert get_state().replay is engine

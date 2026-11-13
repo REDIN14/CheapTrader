@@ -9,8 +9,8 @@ from fastapi import APIRouter, HTTPException, Query
 from app.data.history import PAGE_BARS
 from app.performance import symbol_stats
 from app.replay.engine import ReplayEngine
+from app.replay.history import candle_details
 from app.schemas import (
-    TIMEFRAME_SECONDS,
     BacktestMetrics,
     BacktestTrade,
     Bar,
@@ -175,43 +175,13 @@ def change_timeframe(
     time = engine.cursor_time
     bars, at, more_before, more_after = _window(engine.symbol, timeframe, time, lookback, lookahead or PAGE_BARS)
     first = max(0, at - lookback)
-    # Load the detail of the candle containing the clock. Native intervals use
-    # minute history, with seconds only for the minute containing a subminute
-    # cursor, so switching a seconds replay to a month never downloads a month of ticks.
+    # Detail improves the partial candle and stop execution, but native history
+    # can exist long before the broker's minute/tick history begins.
     if timeframe == Timeframe.S1:
         minutes = [bars[at]]
     else:
         end = bars[at + 1].time - 1 if at + 1 < len(bars) else time
-        state = get_state()
-        try:
-            minutes = state.cache.ensure_range(
-                state.broker.adapter,
-                engine.symbol,
-                Timeframe.S1 if TIMEFRAME_SECONDS[timeframe] < 60 else Timeframe.M1,
-                datetime.fromtimestamp(bars[at].time, tz=timezone.utc),
-                datetime.fromtimestamp(end, tz=timezone.utc),
-            )
-            if time % 60 and TIMEFRAME_SECONDS[timeframe] >= 60:
-                minute = time // 60 * 60
-                seconds = state.cache.ensure_range(
-                    state.broker.adapter,
-                    engine.symbol,
-                    Timeframe.S1,
-                    datetime.fromtimestamp(minute, tz=timezone.utc),
-                    datetime.fromtimestamp(min(end, minute + 59), tz=timezone.utc),
-                )
-                if not seconds:
-                    raise HTTPException(status_code=409, detail="No ticks around the replay cursor.")
-                minutes = sorted(
-                    [b for b in minutes if not minute <= b.time < minute + 60] + seconds,
-                    key=lambda b: b.time,
-                )
-        except HTTPException:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        if not minutes:
-            raise HTTPException(status_code=409, detail="No candles around the replay cursor.")
+        minutes = candle_details(engine, timeframe, bars[at].time, end)
     # Do not begin/end a session or play the newly loaded history through SL/TP.
     # Loading must succeed before touching the current replay, so a failure keeps it usable.
     engine.change_timeframe(timeframe, bars[first:], at - first, minutes)

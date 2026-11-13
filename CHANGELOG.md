@@ -4,6 +4,9 @@ All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
 ## 0.2.5 — replay intervals, seconds charts and magnet mode
 
+* Replay timeframe changes no longer require older one-minute or tick detail when the chosen
+  timeframe's candles are available. Existing replay candles or other available finer intervals
+  provide detail; missing detail keeps the current price without revealing future candle extremes.
 * History grows automatically as you scroll left, with no fixed total candle limit. Replay can start
   on any past date available from the broker, and playback loads more candles when its window ends.
   Indicators follow the loaded historical window; the fixed history-depth menu has been removed.
