@@ -2,6 +2,18 @@
 
 All notable changes to CheapTrader. The version is in `backend/app/__init__.py`.
 
+## Unreleased
+
+* Changing the interval during Bar Replay keeps the replay, its precise clock, open positions and
+  paper account. Candles are loaded around that historical cursor at the depth needed by the new
+  interval. Playback pauses while they load; a failed load keeps the replay usable.
+* Added **1s, 5s, 10s, 15s and 30s** in the interval menu. MetaTrader seconds candles are built from
+  available historical ticks, with no candles invented for empty intervals.
+* Added **Magnet mode** in the drawing toolbar. Drawing points and dragged handles snap to nearby
+  candle open, high, low and close prices; a blue ring shows the snap target. The choice is remembered.
+* Removed execution markers from replay candles and the persistent "Filled BUY/SELL" ticket message.
+  Positions, trade history and order errors remain available.
+
 ## 0.2.4 — indicator settings that take effect
 
 * **Saving an indicator's settings works.** Every Save in an indicator's settings was refused ("Field required":

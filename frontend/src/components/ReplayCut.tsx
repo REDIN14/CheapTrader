@@ -15,12 +15,13 @@ interface Props {
   bars: Bar[];
   /** Show the clock time (intraday bars) or just the date. */
   intraday: boolean;
+  seconds?: boolean;
 }
 
 /** Room kept clear at the label's ends so it never touches the chart's edges. */
 const LABEL_MARGIN = 8;
 
-export function ReplayCut({ hover, geometry, bars, intraday }: Props) {
+export function ReplayCut({ hover, geometry, bars, intraday, seconds = false }: Props) {
   if (!hover || !geometry) return null;
 
   const width = geometry.plotWidth();
@@ -42,7 +43,7 @@ export function ReplayCut({ hover, geometry, bars, intraday }: Props) {
         style={{ left: flip ? hover.x - LABEL_MARGIN : hover.x + LABEL_MARGIN }}
       >
         <ScissorsIcon size={16} />
-        <span>{formatChartTime(hover.time, intraday)}</span>
+        <span>{formatChartTime(hover.time, intraday, seconds)}</span>
         {ahead != null && <em>{ahead > 0 ? `${formatInt(ahead)} bars to play` : "no bars left to play"}</em>}
       </div>
     </div>

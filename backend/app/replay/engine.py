@@ -50,6 +50,11 @@ class ReplayEngine:
     paper: PaperTradingEngine | None = None
     _task: asyncio.Task | None = field(default=None, repr=False)
     _listeners: list = field(default_factory=list, repr=False)
+    # An interval change can put the clock inside a larger candle. Keep its
+    # precise time/price and draw only the part that has actually been replayed.
+    _cursor_bar: Bar | None = field(default=None, repr=False)
+    _cursor_candle: Bar | None = field(default=None, repr=False)
+    _remaining: list[Bar] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
         if self.paper is None:
@@ -118,11 +123,47 @@ class ReplayEngine:
     def cursor_time(self) -> int:
         if not self.bars:
             return 0
-        return self.bars[min(self.index, self.total - 1)].time
+        return self.current_bar.time
+
+    @property
+    def current_bar(self) -> Bar:
+        """The replay clock and execution price, independent of the displayed interval."""
+        return self._cursor_bar or self.bars[min(self.index, self.total - 1)]
+
+    @property
+    def partial_candle(self) -> bool:
+        return self._cursor_candle is not None
 
     def visible_bars(self) -> list[Bar]:
         """Bars up to and including the cursor (what the chart should show)."""
-        return self.bars[: self.index + 1]
+        visible = self.bars[: self.index + 1]
+        if self._cursor_candle is not None:
+            visible[-1] = self._cursor_candle
+        return visible
+
+    def change_timeframe(
+        self, timeframe: Timeframe, bars: list[Bar], index: int, minutes: list[Bar]
+    ) -> None:
+        """Change candles without moving the clock, filling orders, or resetting the account."""
+        current = self.current_bar
+        known = [bar for bar in minutes if bar.time <= current.time]
+        candle = Bar(
+            time=bars[index].time,
+            open=bars[index].open,
+            high=max([bars[index].open, current.close, *(bar.high for bar in known)]),
+            low=min([bars[index].open, current.close, *(bar.low for bar in known)]),
+            close=current.close,
+            tick_volume=sum(bar.tick_volume for bar in known),
+            spread=known[-1].spread if known else current.spread,
+            real_volume=sum(bar.real_volume for bar in known),
+        )
+        self.pause()
+        self.timeframe = timeframe
+        self.bars = bars
+        self.index = index
+        self._cursor_bar = current
+        self._cursor_candle = candle
+        self._remaining = [bar for bar in minutes if bar.time > current.time]
 
     def state(self) -> ReplayState:
         return ReplayState(
@@ -145,6 +186,9 @@ class ReplayEngine:
         they were last marked at) and the equity curve starts again from this bar.
         """
         self.index = max(0, min(index, self.total - 1)) if self.bars else 0
+        self._cursor_bar = None
+        self._cursor_candle = None
+        self._remaining = []
         if self.paper is not None and self.bars:
             self.paper.begin_session(
                 self.bars[self.index],
@@ -169,7 +213,15 @@ class ReplayEngine:
             return self.state()
         target = max(0, min(index, self.total - 1))
         if target > self.index:
+            # Finish the part of the current candle after the preserved clock
+            # before moving into new candles. Stops must not see its earlier history.
+            if self.paper is not None:
+                for bar in self._remaining:
+                    self.paper.on_bar(bar)
             self._play_bars(self.index + 1, target)
+            self._cursor_bar = None
+            self._cursor_candle = None
+            self._remaining = []
         elif target < self.index:
             self.begin(target, reason="rewind")
         self.index = target
@@ -183,7 +235,7 @@ class ReplayEngine:
     def _settle(self, reason: str) -> list[BacktestTrade]:
         if self.paper is None or not self.bars:
             return []
-        return self.paper.settle_all(self.bars[min(self.index, self.total - 1)], reason)
+        return self.paper.settle_all(self.current_bar, reason)
 
     def use_account(self, paper: PaperTradingEngine) -> None:
         """Trade on another paper account from here on (the user chose another profile).
@@ -196,7 +248,7 @@ class ReplayEngine:
         self.paper = paper
         if self.bars:
             paper.begin_session(
-                self.bars[min(self.index, self.total - 1)],
+                self.current_bar,
                 symbol=self.symbol,
                 contract_size=self.contract_size,
                 tick_size=self.tick_size,

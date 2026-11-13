@@ -216,6 +216,10 @@ export const replayApi = {
     return request<ReplayUpdate>(`/api/replay/start?${params.toString()}`, { method: "POST" });
   },
 
+  /** Reload candles around the replay cursor while keeping its paper account. */
+  changeTimeframe: (timeframe: Timeframe, lookback = 1500) =>
+    request<ReplayUpdate>(`/api/replay/timeframe?timeframe=${timeframe}&lookback=${lookback}`, { method: "POST" }),
+
   /** Move the cursor by `delta` bars; the reply holds the bars revealed and the account. */
   advance: (delta = 1) =>
     request<ReplayUpdate>(`/api/replay/advance?delta=${delta}`, { method: "POST" }),

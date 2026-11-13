@@ -6,7 +6,7 @@ import pytest
 
 from app.broker.mock_adapter import MockAdapter
 from app.replay.engine import ReplayEngine
-from app.schemas import Timeframe
+from app.schemas import Bar, OrderRequest, Timeframe
 
 
 @pytest.fixture
@@ -79,3 +79,32 @@ async def test_run_advances_and_notifies(engine: ReplayEngine) -> None:
     assert engine.index == engine.total - 1
     assert engine.playing is False
     assert seen  # listener fired
+
+
+def test_interval_change_hides_future_prices_and_only_checks_remaining_stops() -> None:
+    original = Bar(time=3600, open=100, high=105, low=95, close=100)
+    engine = ReplayEngine.from_bars("EURUSD", Timeframe.H1, [original])
+    engine.begin(0)
+    paper = engine.paper
+    placed = paper.place(OrderRequest(symbol="EURUSD", side="BUY", volume=0.1, sl=90), original)
+    assert placed.ok
+    bars = [
+        Bar(time=0, open=100, high=999, low=1, close=102),
+        Bar(time=14400, open=102, high=111, low=100, close=110),
+    ]
+    minutes = [
+        Bar(time=0, open=100, high=105, low=10, close=99),
+        Bar(time=3600, open=99, high=102, low=95, close=100),
+        Bar(time=3660, open=100, high=999, low=89, close=101),
+    ]
+    engine.change_timeframe(Timeframe.H4, bars, 0, minutes)
+    assert engine.cursor_time == 3600
+    assert engine.current_bar.close == 100
+    assert engine.visible_bars()[-1].high == 105  # not the future spike
+    assert engine.visible_bars()[-1].low == 10  # earlier history did not execute the stop
+    assert not paper.closed and len(paper.positions) == 1
+    moved = engine.advance()
+    assert len(moved.closed) == 1
+    assert moved.closed[0].reason == "sl" and moved.closed[0].exit_time == 3660
+    assert not engine.partial_candle
+    assert engine.visible_bars()[0].high == 999

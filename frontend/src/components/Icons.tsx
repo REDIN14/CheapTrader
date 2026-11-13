@@ -49,6 +49,13 @@ export const BrandMark = ({ size = 28, ...rest }: IconProps) => (
 
 /* -- generic controls ---------------------------------------------- */
 
+export const MagnetIcon = ({ size = 24, ...rest }: IconProps) => (
+  <Icon size={size} {...rest}>
+    <path d="M6 5v10a8 8 0 0 0 16 0V5h-5v10a3 3 0 0 1-6 0V5Z" />
+    <path d="M6 10h5M17 10h5" />
+  </Icon>
+);
+
 export const ChevronDown = ({ size = 16, ...rest }: IconProps) => (
   <Icon size={size} strokeWidth={1.5} {...rest}>
     <path d="M9 11.5l5 5 5-5" />

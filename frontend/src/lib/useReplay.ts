@@ -9,8 +9,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, replayApi } from "./api";
-import type { ViewPolicy } from "./chart";
+import { barsNeeded, QUICK_BARS } from "./barStore";
+import type { ViewHint, ViewPolicy } from "./chart";
 import { usePersistentState } from "./persist";
+import { TF } from "./timeframes";
 import type {
   BacktestTrade,
   Bar,
@@ -49,8 +51,11 @@ const IDLE: Snapshot = { mode: "off", state: null, account: null, trades: [] };
 interface Options {
   symbol: string | null;
   timeframe: Timeframe;
+  barCount: number;
+  readView: () => ViewHint | null;
+  onTimeframeFailed: (timeframe: Timeframe) => void;
   /** Put a whole new set of candles on the chart. */
-  showBars: (bars: Bar[], view: ViewPolicy) => void;
+  showBars: (bars: Bar[], view: ViewPolicy, context: { symbol: string; timeframe: Timeframe }) => void;
   /** Add candles after the ones on the chart. */
   appendBars: (bars: Bar[]) => void;
   onError: (message: string) => void;
@@ -60,9 +65,14 @@ interface Options {
   onEnded?: () => void;
 }
 
-export function useReplay({ symbol, timeframe, showBars, appendBars, onError, onClosed, onEnded }: Options) {
+export function useReplay({ symbol, timeframe, barCount, readView, onTimeframeFailed, showBars, appendBars, onError, onClosed, onEnded }: Options) {
   const [snap, setSnap] = useState<Snapshot>(IDLE);
   const [playing, setPlaying] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const switchingRef = useRef(false);
+  const changingTimeframe = switching || (snap.mode === "running" && snap.state?.timeframe !== timeframe);
+  const changingRef = useRef(changingTimeframe);
+  changingRef.current = changingTimeframe;
   const [speed, setSpeed] = usePersistentState<number>("replaySpeed", DEFAULT_SPEED);
   const [report, setReport] = useState<ReplayReport | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
@@ -71,8 +81,8 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
   // created it.
   const snapRef = useRef(snap);
   snapRef.current = snap;
-  const calls = useRef({ showBars, appendBars, onError, onClosed, onEnded });
-  calls.current = { showBars, appendBars, onError, onClosed, onEnded };
+  const calls = useRef({ showBars, appendBars, onError, onClosed, onEnded, barCount, readView, onTimeframeFailed });
+  calls.current = { showBars, appendBars, onError, onClosed, onEnded, barCount, readView, onTimeframeFailed };
   // Bumped whenever a replay ends or starts over, so a reply that was still on its
   // way for the old one is thrown away instead of landing in the new one.
   const run = useRef(0);
@@ -81,8 +91,14 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
   // they are done as soon as it lands (five quick clicks on "forward" are five bars).
   const wanted = useRef({ steps: 0, end: false });
   const draining = useRef(false);
-  // The request that ends a replay on the server. A start waits for it, so it cannot end the new replay.
-  const ending = useRef<Promise<unknown>>(Promise.resolve());
+  // Cursor changes must reach the server in order, including a timeframe change
+  // made while playback is advancing or while another interval is loading.
+  const pending = useRef<Promise<unknown>>(Promise.resolve());
+  const serialize = useCallback(<T,>(request: () => Promise<T>): Promise<T> => {
+    const next = pending.current.catch(() => undefined).then(request);
+    pending.current = next;
+    return next;
+  }, []);
 
   const commit = useCallback((next: Snapshot) => {
     snapRef.current = next;
@@ -91,14 +107,14 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
 
   /** Take in what a cursor move reported. */
   const apply = useCallback(
-    (up: ReplayUpdate, token: number) => {
+    (up: ReplayUpdate, token: number, view?: ViewPolicy) => {
       const prev = snapRef.current;
       const starting = prev.mode !== "running";
       let trades = prev.trades;
-      if (up.reset) trades = [];
+      if (up.reset && starting) trades = [];
       else if (up.closed.length) trades = prev.trades.concat(up.closed);
 
-      if (up.reset) calls.current.showBars(up.bars, starting ? "latest" : "keep");
+      if (up.reset) calls.current.showBars(up.bars, view ?? (starting ? "latest" : "keep"), up.state);
       else if (up.bars.length) calls.current.appendBars(up.bars);
 
       commit({ mode: "running", state: up.state, account: up.account, trades });
@@ -133,11 +149,10 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
    * or the next start of the program does the same.)
    */
   const endOnServer = useCallback(() => {
-    ending.current = replayApi
-      .stop()
+    void serialize(() => replayApi.stop())
       .catch(() => undefined)
       .then(() => calls.current.onEnded?.());
-  }, []);
+  }, [serialize]);
 
   /** Leave the replay altogether; the chart goes back to the live candles. */
   const exit = useCallback(() => {
@@ -145,6 +160,8 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
     run.current++;
     moving.current = false;
     wanted.current = { steps: 0, end: false };
+    switchingRef.current = false;
+    setSwitching(false);
     setPlaying(false);
     setReport(null);
     setReportOpen(false);
@@ -158,6 +175,8 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
     run.current++;
     moving.current = false;
     wanted.current = { steps: 0, end: false };
+    switchingRef.current = false;
+    setSwitching(false);
     setPlaying(false);
     setReport(null);
     commit({ ...IDLE, mode: "picking" });
@@ -169,12 +188,12 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
       const token = ++run.current;
       commit({ ...snapRef.current, mode: "starting" });
       try {
-        await ending.current;
-        if (token !== run.current) return;
-        const up = await replayApi.start(symbol, timeframe, time);
+        const up = await serialize(() => token === run.current
+          ? replayApi.start(symbol, timeframe, time, Math.min(calls.current.barCount, QUICK_BARS))
+          : Promise.resolve(null));
+        if (!up) return;
         if (token !== run.current) {
-          // Left while it was loading: the replay that has just been made is over before it began.
-          if ((snapRef.current.mode as ReplayMode) === "off") endOnServer(); // (the guard above has narrowed the type)
+          // Exit/start requests are serialized behind this one, so they own cleanup.
           return;
         }
         apply(up, token);
@@ -184,8 +203,56 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
         calls.current.onError((err as Error).message);
       }
     },
-    [symbol, timeframe, apply, commit, endOnServer],
+    [symbol, timeframe, apply, commit, serialize],
   );
+
+  const changeTimeframe = useCallback(async (next: Timeframe) => {
+    const token = ++run.current;
+    switchingRef.current = true;
+    setSwitching(true);
+    setPlaying(false);
+    moving.current = true;
+    wanted.current = { steps: 0, end: false };
+    const lookback = Math.min(20_000, calls.current.barCount, barsNeeded(calls.current.readView(), TF[next].seconds));
+    try {
+      const up = await serialize(() => token === run.current
+        ? replayApi.changeTimeframe(next, lookback)
+        : Promise.resolve(null));
+      if (token !== run.current || !up) return;
+      apply(up, token, "anchor");
+    } catch (err) {
+      if (token !== run.current) return;
+      calls.current.onError((err as Error).message);
+      // A previous, overtaken switch may already have landed on the server.
+      // Recover its actual candles and account instead of guessing the old interval.
+      try {
+        const actual = await serialize(async () => {
+          if (token !== run.current) return null;
+          const [state, bars, account] = await Promise.all([replayApi.state(), replayApi.bars(), replayApi.account()]);
+          return { state, bars, account, reset: true, closed: [] } satisfies ReplayUpdate;
+        });
+        if (token !== run.current || !actual) return;
+        apply(actual, token, "anchor");
+        calls.current.onTimeframeFailed(actual.state.timeframe);
+      } catch {
+        if (token === run.current && snapRef.current.state) calls.current.onTimeframeFailed(snapRef.current.state.timeframe);
+      }
+    } finally {
+      if (token === run.current) {
+        moving.current = false;
+        switchingRef.current = false;
+        setSwitching(false);
+      }
+    }
+  }, [apply, serialize]);
+
+  // Stay in replay while the new interval loads. A start that finishes after the
+  // interval was changed is first committed with its own metadata, then converted.
+  useEffect(() => {
+    if (snap.mode !== "running" || snap.state?.symbol !== symbol) return;
+    if (snap.state.timeframe === timeframe && !switchingRef.current) return;
+    void changeTimeframe(timeframe);
+  }, [symbol, timeframe, snap.mode, snap.state?.timeframe, changeTimeframe]);
 
   // -- moving the cursor ---------------------------------------------------------
   /** Move the cursor; resolves to the reply, or null if it failed or was overtaken. */
@@ -194,8 +261,10 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
       const token = run.current;
       moving.current = true;
       try {
-        const up = await replayApi.advance(delta);
-        if (token !== run.current) return null;
+        const up = await serialize(() => token === run.current
+          ? replayApi.advance(delta)
+          : Promise.resolve(null));
+        if (token !== run.current || !up) return null;
         apply(up, token);
         return up;
       } catch (err) {
@@ -217,7 +286,7 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
         if (token === run.current) moving.current = false;
       }
     },
-    [apply],
+    [apply, serialize, commit],
   );
 
   /** Do what the user asked for, one move at a time, as soon as the cursor is free. */
@@ -254,7 +323,7 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
 
   const step = useCallback(
     async (n = 1) => {
-      if (snapRef.current.mode !== "running") return;
+      if (snapRef.current.mode !== "running" || changingRef.current) return;
       wanted.current.steps += n;
       await drain();
     },
@@ -262,14 +331,14 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
   );
 
   const jumpToEnd = useCallback(async () => {
-    if (snapRef.current.mode !== "running" || !snapRef.current.state) return;
+    if (snapRef.current.mode !== "running" || !snapRef.current.state || changingRef.current) return;
     wanted.current.end = true;
     await drain();
   }, [drain]);
 
   const play = useCallback(() => {
     const st = snapRef.current.state;
-    if (snapRef.current.mode === "running" && st && st.index < st.total - 1) setPlaying(true);
+    if (snapRef.current.mode === "running" && st && st.index < st.total - 1 && !changingRef.current) setPlaying(true);
   }, []);
   const pause = useCallback(() => setPlaying(false), []);
   const toggle = useCallback(() => {
@@ -279,7 +348,7 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
 
   // The pace: one request per tick, several bars per tick at the top speeds.
   useEffect(() => {
-    if (!playing || snap.mode !== "running") return;
+    if (!playing || snap.mode !== "running" || changingTimeframe) return;
     let alive = true;
     let timer = 0;
     const perTick = Math.max(1, Math.ceil(speed / MAX_TICKS_PER_SECOND));
@@ -305,7 +374,7 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [playing, speed, snap.mode, advance]);
+  }, [playing, speed, snap.mode, changingTimeframe, advance]);
 
   // -- the paper account -----------------------------------------------------------
   /** Re-read the account after an order, a close or a stop change. */
@@ -377,6 +446,7 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
       account: snap.account,
       trades: snap.trades,
       playing,
+      changingTimeframe,
       speed,
       report,
       reportOpen,
@@ -398,6 +468,7 @@ export function useReplay({ symbol, timeframe, showBars, appendBars, onError, on
     [
       snap,
       playing,
+      changingTimeframe,
       speed,
       report,
       reportOpen,

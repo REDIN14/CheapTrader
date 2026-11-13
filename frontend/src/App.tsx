@@ -16,7 +16,6 @@ import { TF } from "./lib/timeframes";
 import { indicatorCount, plotsFrom } from "./lib/indicatorDepth";
 import { paramText } from "./lib/indicatorParams";
 import type { Drawing } from "./lib/drawings";
-import { replayMarkers } from "./lib/replayMarkers";
 import { useChartData, type ChartFrame } from "./lib/useChartData";
 import { REPLAY_SPEEDS, useReplay } from "./lib/useReplay";
 import { useReplayProfiles } from "./lib/useReplayProfiles";
@@ -264,7 +263,7 @@ export default function App() {
   // through the bridge below (the two hooks need each other, so each reads the
   // other's latest functions instead of calling them directly).
   const chartBridge = useRef<{
-    show: (bars: Bar[], view: ViewPolicy) => void;
+    show: (bars: Bar[], view: ViewPolicy, context: { symbol: string; timeframe: Timeframe }) => void;
     append: (bars: Bar[]) => void;
   }>({ show: () => undefined, append: () => undefined });
 
@@ -283,7 +282,10 @@ export default function App() {
   const replay = useReplay({
     symbol,
     timeframe,
-    showBars: (bars, view) => chartBridge.current.show(bars, view),
+    barCount,
+    readView: () => viewHintRef.current?.() ?? null,
+    onTimeframeFailed: setTimeframe,
+    showBars: (bars, view, context) => chartBridge.current.show(bars, view, context),
     appendBars: (bars) => chartBridge.current.append(bars),
     onError: setError,
     onClosed: onReplayClosed,
@@ -431,7 +433,7 @@ export default function App() {
     [symbols, frame.symbol],
   );
   // Only worth saying "loading" if it takes a moment.
-  const showProgress = useDelayedFlag(barsLoading, 140);
+  const showProgress = useDelayedFlag(barsLoading || replay.changingTimeframe, 140);
 
   // Draft SL/TP belong to one symbol; clear them when the symbol *changes* so
   // their price lines cannot distort the new symbol's scale. On the first mount
@@ -481,9 +483,9 @@ export default function App() {
   const newestTime = liveBar?.time ?? null;
   useEffect(() => {
     if (replayActive || newestTime == null) return;
-    const id = window.setTimeout(() => void syncTail(), 1_500);
+    const id = window.setTimeout(() => void syncTail(), TF[shownTimeframe].seconds < 60 ? 250 : 1_500);
     return () => window.clearTimeout(id);
-  }, [replayActive, newestTime, frameKey, syncTail]);
+  }, [replayActive, newestTime, frameKey, shownTimeframe, syncTail]);
   useEffect(() => {
     if (replayActive) return;
     const check = () => {
@@ -507,17 +509,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replay.mode, replay.open, replay.exit]);
 
-  // Replay belongs to one symbol and interval: switching either one ends it,
-  // exactly as TradingView does, instead of leaving the old candles under a new
-  // symbol's name.
-  const replayContextRef = useRef({ symbol, timeframe });
+  // A new symbol ends the replay. Interval changes are handled inside useReplay
+  // and keep the historical cursor and paper account.
+  const replayContextRef = useRef(symbol);
   useEffect(() => {
-    const before = replayContextRef.current;
-    if (before.symbol === symbol && before.timeframe === timeframe) return;
-    replayContextRef.current = { symbol, timeframe };
+    if (replayContextRef.current === symbol) return;
+    replayContextRef.current = symbol;
     if (replay.mode !== "off") replay.exit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, timeframe, replay.mode, replay.exit]);
+  }, [symbol, replay.mode, replay.exit]);
 
   // A click on a bar starts the replay there while one is being set up, and does
   // nothing otherwise.
@@ -1631,15 +1631,6 @@ export default function App() {
     return lastRange.current;
   }, [replayActive, replay.state, frame.complete, bars]);
 
-  // Where the replay's trades opened and closed, drawn on the candles. Keyed on
-  // the trades and on where each open position began, not on its floating profit.
-  const openKey = chartPositions.map((p) => `${p.ticket}:${p.time}:${p.side}:${p.volume}`).join("|");
-  const markers = useMemo(
-    () => (replayActive ? replayMarkers(replay.trades, chartPositions, symbol) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [replayActive, replay.trades, openKey, symbol],
-  );
-
   // The paper-trading profile menu: where a replay is set up and in the panel beside it while it runs.
   const profileMenu = (variant: "pill" | "field") => (
     <ProfileMenu
@@ -1668,7 +1659,7 @@ export default function App() {
   // What a long / short box needs to place its trade: the account, the market and the way to send orders.
   const boxTrading = useMemo<BoxTrading>(
     () => ({
-      enabled: !!symbol && !replayPicking,
+      enabled: !!symbol && !replayPicking && !replay.changingTimeframe,
       paper: replayActive,
       symbol: tradeSpec,
       digits,
@@ -1680,7 +1671,7 @@ export default function App() {
       place: submitOrder,
       setLevels: (ticket, sl, tp) => void modifyLevels(ticket, sl, tp, "Stop loss and take profit set from the box"),
     }),
-    [symbol, replayPicking, replayActive, tradeSpec, digits, bid, ask, replay.account, account, chartPositions, submitOrder, modifyLevels],
+    [symbol, replayPicking, replayActive, replay.changingTimeframe, tradeSpec, digits, bid, ask, replay.account, account, chartPositions, submitOrder, modifyLevels],
   );
 
   return (
@@ -1689,7 +1680,7 @@ export default function App() {
         symbol={symbol}
         timeframe={timeframe}
         onTimeframe={setTimeframe}
-        onPrefetch={prefetchInterval}
+        onPrefetch={replayActive ? undefined : prefetchInterval}
         onOpenSymbolSearch={() => setSearchOpen(true)}
         indicatorsOpen={showDock && panel === "indicators"}
         tradeOpen={showDock && panel === "trade"}
@@ -1714,7 +1705,6 @@ export default function App() {
                 bars={bars}
                 liveBar={liveBar}
                 priceLines={priceLines}
-                markers={markers}
                 indicatorPlots={shownPlots}
                 digits={shownSymbol?.digits}
                 point={shownSymbol?.point}
@@ -1817,6 +1807,7 @@ export default function App() {
                     geometry={chartGeom}
                     bars={bars}
                     intraday={intraday}
+                    seconds={TF[shownTimeframe].seconds < 60}
                   />
                   <ReplayPicker
                     symbol={symbol ?? ""}
@@ -1835,6 +1826,7 @@ export default function App() {
                 <ReplayToolbar
                   state={replay.state}
                   playing={replay.playing}
+                  loading={replay.changingTimeframe}
                   speed={replay.speed}
                   speeds={REPLAY_SPEEDS}
                   intraday={intraday}
@@ -1913,6 +1905,7 @@ export default function App() {
                 price={lastBar ? lastBar.close : null}
                 digits={digits}
                 account={replay.account}
+                disabled={replay.changingTimeframe}
                 trades={replay.trades}
                 intraday={intraday}
                 form={orderForm}

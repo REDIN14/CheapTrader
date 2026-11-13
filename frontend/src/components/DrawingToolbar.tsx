@@ -22,6 +22,7 @@ import {
   EyeOffIcon,
   GripIcon,
   LongPositionIcon,
+  MagnetIcon,
   RectangleIcon,
   ShortPositionIcon,
   TrashIcon,
@@ -70,6 +71,8 @@ interface Props {
   onTool: (tool: Tool | null) => void;
   /** The tools cannot be used right now (the chart is waiting for a click of its own). */
   toolsDisabled?: boolean;
+  magnet: boolean;
+  onToggleMagnet: () => void;
   hidden: boolean;
   onToggleHidden: () => void;
   /** The symbol on the chart (the bar offers to remove its drawings, or everyone's). */
@@ -79,7 +82,7 @@ interface Props {
   onDocs: () => void;
 }
 
-export function DrawingToolbar({ tool, onTool, toolsDisabled = false, hidden, onToggleHidden, symbol, onRemove, onDocs }: Props) {
+export function DrawingToolbar({ tool, onTool, toolsDisabled = false, magnet, onToggleMagnet, hidden, onToggleHidden, symbol, onRemove, onDocs }: Props) {
   const barRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [stored, setStored] = usePersistentState<unknown>("drawToolbarSpot", null);
@@ -195,6 +198,16 @@ export function DrawingToolbar({ tool, onTool, toolsDisabled = false, hidden, on
       })}
 
       <span className="dr-sep" />
+
+      <button
+        className={magnet ? "dr-btn small active" : "dr-btn small"}
+        title="Magnet mode: snap drawing points to nearby candle open, high, low and close"
+        aria-label="Magnet mode"
+        aria-pressed={magnet}
+        onClick={onToggleMagnet}
+      >
+        <MagnetIcon size={24} />
+      </button>
 
       <button
         className={hidden ? "dr-btn small active" : "dr-btn small"}

@@ -80,10 +80,10 @@ const two = (n: number) => String(n).padStart(2, "0");
  * broker's server time carried as if it were UTC, so the UTC fields are the ones
  * the time axis shows.
  */
-export function formatChartTime(ts: number, withTime = true): string {
+export function formatChartTime(ts: number, withTime = true, withSeconds = false): string {
   const d = new Date(ts * 1000);
   const day = `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-  return withTime ? `${day} · ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}` : day;
+  return withTime ? `${day} · ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}${withSeconds ? `:${two(d.getUTCSeconds())}` : ""}` : day;
 }
 
 /** The short form for tables: "14 Sep 21:15" (and "14 Sep 2026" for daily bars). */

@@ -15,6 +15,7 @@ interface Props {
   price: number | null;
   digits: number;
   account: ReplayAccount | null;
+  disabled?: boolean;
   trades: BacktestTrade[];
   /** Show clock times (intraday bars) or just dates. */
   intraday: boolean;
@@ -45,6 +46,7 @@ export function ReplayTradePanel({
   price,
   digits,
   account,
+  disabled = false,
   trades,
   intraday,
   form,
@@ -58,7 +60,7 @@ export function ReplayTradePanel({
   const [busy, setBusy] = useState(false);
 
   const submit = async (side: "BUY" | "SELL") => {
-    if (!symbol) return;
+    if (!symbol || disabled) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -69,11 +71,7 @@ export function ReplayTradePanel({
         sl: form.sl ? Number(form.sl) : null,
         tp: form.tp ? Number(form.tp) : null,
       });
-      setMessage(
-        result.ok
-          ? `Filled ${side} ${formatLots(form.volume)} @ ${result.price.toFixed(digits)}`
-          : `Error: ${result.error}`,
-      );
+      if (!result.ok) setMessage(`Error: ${result.error}`);
       onRefresh();
     } catch (err) {
       setMessage(`Error: ${(err as Error).message}`);
@@ -138,7 +136,7 @@ export function ReplayTradePanel({
       <OrderTicket
         form={form}
         onFormChange={onFormChange}
-        disabled={!symbol}
+        disabled={!symbol || disabled}
         busy={busy}
         message={message}
         onSubmit={submit}

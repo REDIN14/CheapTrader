@@ -77,7 +77,7 @@ def reset_profile(profile_id: str, body: ResetProfile | None = None) -> Profiles
         raise _fail(exc) from exc
     replay = state.replay
     if replay is not None and replay.paper is engine and replay.bars:
-        engine.restart_curve(replay.bars[min(replay.index, replay.total - 1)])  # the curve starts again here
+        engine.restart_curve(replay.current_bar)  # the curve starts again here
     return _view(state)
 
 

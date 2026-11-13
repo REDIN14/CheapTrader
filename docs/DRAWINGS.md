@@ -29,6 +29,7 @@ anywhere on the chart; double-click the grip to put it back. Where you leave it 
 | `L` Long position | A box for a trade that buys: stop below, target above |
 | Rectangle | A box between two corners, **extended to the right** |
 | Parallel channel | Two parallel lines and the band between them |
+| Magnet | Snap new drawing points and dragged handles to nearby candle open, high, low or close prices (remembered) |
 | Eye | Hide / show all your drawings (the choice is remembered) |
 | Bin | Opens a small menu to remove drawings: those of this symbol or of every symbol, and the locked ones on their own (§1f) |
 | Book | Opens this documentation |
@@ -127,12 +128,18 @@ second time before it does:
 A locked drawing stays when the first two are used; the message says how many were kept. A single locked
 drawing is removed by unlocking it first.
 
+**Magnet mode.** Press the magnet in the drawing bar to turn snapping on or off. While placing a
+point, a blue ring marks a nearby candle's open, high, low or close. A click uses that exact candle
+time and price; dragging a handle snaps it the same way. Points farther away stay free. Moving a
+whole drawing keeps its shape. During replay only the visible candles can attract a point.
+
 ### 1g. What is remembered
 
 | What | Where |
 | --- | --- |
 | Your drawings, with their places, colours, thickness, locks and sizes | on the server, per symbol (survives a restart) |
 | Whether drawings are hidden | in the browser |
+| Whether magnet mode is on | in the browser |
 | Where the bar of tools was left | in the browser |
 
 ---

@@ -466,6 +466,10 @@ the parameters. The page's part is `frontend/src/lib/indicatorDepth.ts`; the gui
 
 ### Changing the interval
 
+The **▾ All intervals** menu includes **1s, 5s, 10s, 15s and 30s** under **Seconds**.
+Seconds candles are built from the broker's historical ticks; their available depth depends on that
+tick history. Intervals with no ticks stay empty. Seconds are shown on the time axis and replay clock.
+
 Switching the interval, or coming back to a symbol you already had open, neither
 blanks the chart nor throws your view away:
 
@@ -661,7 +665,9 @@ is remembered):
 The thin line along its lower edge shows how far through the window the cursor is.
 The chart opens at a readable zoom with the cursor near the right edge and follows
 it as bars arrive; scroll or zoom whenever you like and it stays where you put it.
-Changing the symbol or the interval ends the replay (as in TradingView). Indicators
+Changing the symbol ends the replay. Changing the interval pauses playback and loads the new candles
+around the same replay time, keeping the paper account, open positions and trade history. The chart
+keeps its zoom and place, and a failed load keeps the replay usable. Indicators
 are clipped at the cursor so they cannot show the future, and they are run over every bar back to
 the replay's first candle, so they have values from its first bar on.
 
@@ -672,9 +678,8 @@ closed P&L, the open positions and a trade history. The strip under the chart fo
 it: balance, equity, open P&L, return, trades (wins / losses), win rate, max drawdown
 and profit factor — on a narrow window the last of these drop out whole rather than
 being cut in half. When a stop or target closes a position — also during **Jump to the
-last bar** — a message says which one and what it made. Entries are marked on the chart
-with an arrow and the lots, exits with a dot and the profit or loss (only those of the
-symbol on the chart: a profile's history spans every symbol it was used on).
+last bar** — a message says which one and what it made. Execution markers are kept off the candles;
+the positions, history and report hold the trade details.
 
 **Profiles.** The paper account is a *profile*: a named account with a starting balance
 of your choice (10,000 unless you say otherwise) that keeps its balance and its whole
@@ -751,7 +756,8 @@ Fixed along the way:
   figures were recomputed over the whole history on every poll.
 
 Backend (`/api/replay`): `POST /start` (symbol, timeframe, time → opens a window of
-1,500 bars before that bar and up to 60,000 after it), `POST /advance?delta=N`,
+1,500 bars before that bar and up to 60,000 after it, or 6,000 after it for seconds intervals),
+`POST /timeframe?timeframe=S5&lookback=1500` (change candles while keeping the session), `POST /advance?delta=N`,
 `GET /account`, `GET /report`, plus `state`, `bars`, `orders`, `positions`, `trades`
 and `reset-account` (starts the profile in use over). `POST /stop` ends the replay: the
 open positions are settled and the profile saved. The profiles are `GET` and `POST`

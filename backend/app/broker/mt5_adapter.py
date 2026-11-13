@@ -15,7 +15,9 @@ from datetime import datetime, timedelta, timezone
 
 from app.broker.base import BrokerAdapter, BrokerError
 from app.config import Settings
+from app.data.seconds import tick_rows
 from app.schemas import (
+    TIMEFRAME_SECONDS,
     AccountInfo,
     Bar,
     Deal,
@@ -225,6 +227,8 @@ class MT5Adapter(BrokerAdapter):
         oldest first. (What the reader process sends over its pipe: numbers are much cheaper to
         ship than a model each.)"""
         self._require()
+        if TIMEFRAME_SECONDS[timeframe] < 60:
+            return self._second_rows(symbol, timeframe, count, start, end)
         tf = self._tf(timeframe)
         if start is not None and end is not None:
             rates = self._mt5.copy_rates_range(symbol, tf, start, end)
@@ -245,6 +249,59 @@ class MT5Adapter(BrokerAdapter):
             ]
             for r in rates
         ]
+
+    def _second_rows(
+        self, symbol: str, timeframe: Timeframe, count: int,
+        start: datetime | None, end: datetime | None,
+    ) -> list[list]:
+        """Read tick history in bounded pages instead of asking MT5 for unsupported rates."""
+        step = TIMEFRAME_SECONDS[timeframe]
+        now = int(datetime.now(timezone.utc).timestamp())
+        ranged = start is not None and end is not None
+        info = self._mt5.symbol_info(symbol)
+        point = float(getattr(info, "point", 0.0) or 0.0)
+        if ranged:
+            first, last = int(start.timestamp()), int(end.timestamp())
+        else:
+            latest = self._mt5.symbol_info_tick(symbol)
+            last = min(now, int(getattr(latest, "time", now) or now))
+            first = max(0, (last // step - max(1, count) + 1) * step)
+        if last < first:
+            return []
+        right = min(now + 1, (last // step + 1) * step)
+        left = first // step * step
+        rows: list[list] = []
+        for attempt in range(5):
+            page_rows: list[list] = []
+            cursor = left
+            while cursor < right:
+                until = min(right, cursor + 3600)
+                ticks = self._mt5.copy_ticks_range(
+                    symbol,
+                    datetime.fromtimestamp(cursor, tz=timezone.utc),
+                    datetime.fromtimestamp(until, tz=timezone.utc),
+                    self._mt5.COPY_TICKS_ALL,
+                )
+                if ticks is None:
+                    raise BrokerError(f"Tick history failed for {symbol}: {self._mt5.last_error()}")
+                # The range API includes its end. Assign a boundary tick to only one page.
+                chunk = tick_rows(
+                    (t for t in ticks if cursor * 1000 <= (int(t["time_msc"]) or int(t["time"]) * 1000) < until * 1000),
+                    step, point,
+                )
+                page_rows.extend(chunk)
+                cursor = until
+            rows = page_rows + rows
+            if ranged or len(rows) >= count or left == 0:
+                break
+            # Sparse seconds and closures need more elapsed time to yield N candles.
+            # Only load the newly uncovered history on the next pass.
+            span = max(step * count, right - left)
+            right, left = left, max(0, left - span * (attempt + 1))
+        rows = [row for row in rows if row[0] >= first] if ranged else rows[-count:]
+        if not ranged and not rows:
+            raise BrokerError(f"No tick history is available for {symbol} seconds candles.")
+        return rows
 
     def get_bars(
         self,

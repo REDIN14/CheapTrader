@@ -16,6 +16,7 @@ import { formatChartTime, formatInt } from "../lib/format";
 import { useDismiss } from "../lib/hooks";
 import { usePersistentState } from "../lib/persist";
 import type { ReplayState } from "../lib/types";
+import { TF } from "../lib/timeframes";
 import {
   CheckIcon,
   ChevronDown,
@@ -31,6 +32,7 @@ import {
 interface Props {
   state: ReplayState;
   playing: boolean;
+  loading?: boolean;
   /** Bars per second. */
   speed: number;
   speeds: number[];
@@ -79,6 +81,7 @@ interface Drag {
 export function ReplayToolbar({
   state,
   playing,
+  loading = false,
   speed,
   speeds,
   intraday,
@@ -159,13 +162,13 @@ export function ReplayToolbar({
       <button
         className="rp-btn play"
         onClick={onToggle}
-        disabled={atEnd && !playing}
+        disabled={loading || (atEnd && !playing)}
         title={playing ? "Pause (Space)" : "Play (Space)"}
         aria-pressed={playing}
       >
         {playing ? <PauseIcon size={24} /> : <PlayIcon size={24} />}
       </button>
-      <button className="rp-btn" onClick={onStep} disabled={atEnd} title="Forward one bar (→)">
+      <button className="rp-btn" onClick={onStep} disabled={loading || atEnd} title="Forward one bar (→)">
         <StepIcon size={24} />
       </button>
 
@@ -205,16 +208,16 @@ export function ReplayToolbar({
 
       <span className="rp-sep" />
 
-      <button className="rp-btn" onClick={onJumpToEnd} disabled={atEnd} title="Jump to the last bar">
+      <button className="rp-btn" onClick={onJumpToEnd} disabled={loading || atEnd} title="Jump to the last bar">
         <SkipEndIcon size={24} />
       </button>
 
       <span className="rp-sep" />
 
       <span className="rp-clock" title="Where the replay is now">
-        <b>{formatChartTime(state.cursor_time, intraday)}</b>
+        <b>{formatChartTime(state.cursor_time, intraday, TF[state.timeframe].seconds < 60)}</b>
         <small>
-          {atEnd ? "End · " : ""}
+          {loading ? "Loading candles · " : atEnd ? "End · " : ""}
           {formatInt(state.index + 1)} / {formatInt(state.total)}
         </small>
       </span>

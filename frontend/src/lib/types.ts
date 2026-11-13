@@ -2,9 +2,9 @@
 
 import type { Drawing } from "./drawings";
 
-export type Timeframe = "M1" | "M5" | "M15" | "M30" | "H1" | "H4" | "D1" | "W1" | "MN1";
+export type Timeframe = "S1" | "S5" | "S10" | "S15" | "S30" | "M1" | "M5" | "M15" | "M30" | "H1" | "H4" | "D1" | "W1" | "MN1";
 
-export const TIMEFRAMES: Timeframe[] = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"];
+export const TIMEFRAMES: Timeframe[] = ["S1", "S5", "S10", "S15", "S30", "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"];
 
 export interface Symbol {
   name: string;

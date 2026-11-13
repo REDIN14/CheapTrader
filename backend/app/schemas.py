@@ -15,8 +15,13 @@ from pydantic import BaseModel, Field
 
 
 class Timeframe(str, Enum):
-    """Supported chart timeframes mapped to MT5 timeframe constants."""
+    """Supported chart intervals; seconds candles are aggregated from ticks."""
 
+    S1 = "S1"
+    S5 = "S5"
+    S10 = "S10"
+    S15 = "S15"
+    S30 = "S30"
     M1 = "M1"
     M5 = "M5"
     M15 = "M15"
@@ -30,6 +35,11 @@ class Timeframe(str, Enum):
 
 #: Seconds one bar covers (a month is a 30-day approximation).
 TIMEFRAME_SECONDS: dict[Timeframe, int] = {
+    Timeframe.S1: 1,
+    Timeframe.S5: 5,
+    Timeframe.S10: 10,
+    Timeframe.S15: 15,
+    Timeframe.S30: 30,
     Timeframe.M1: 60,
     Timeframe.M5: 300,
     Timeframe.M15: 900,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
@@ -113,29 +114,13 @@ def load(
 _CALENDAR_SLACK = 1.6
 
 
-@router.post("/start", response_model=ReplayUpdate)
-def start(
-    symbol: str,
-    timeframe: Timeframe = Timeframe.H1,
-    time: int = Query(description="Epoch second of the bar to start on (chart time)."),
-    lookback: int = Query(
-        default=1500, ge=0, le=20_000, description="Bars of history to keep before the start."
-    ),
-    lookahead: int = Query(
-        default=60_000, ge=1, le=200_000, description="Most bars to load after the start."
-    ),
-) -> ReplayUpdate:
-    """Start a replay on the bar nearest ``time``.
-
-    The window is the history before that bar plus everything after it (up to the
-    latest bar, capped at ``lookahead``), so the caller only has to say *where* to
-    start. The reply carries the bars up to the cursor, ready to draw.
-    """
+def _window(
+    symbol: str, timeframe: Timeframe, time: int, lookback: int, lookahead: int
+) -> list[Bar]:
+    """Load a timeframe-sized window around a historical cursor, never the live tail."""
     state = get_state()
-    spec = _spec(symbol)
     step = TIMEFRAME_SECONDS[timeframe]
-
-    first_ts = max(0, time - int(lookback * step * _CALENDAR_SLACK))
+    first_ts = max(0, time - int(max(1, lookback) * step * _CALENDAR_SLACK))
     newest_ts = int(datetime.now(timezone.utc).timestamp()) + 2 * 86_400
     last_ts = max(time + step, min(newest_ts, time + int(lookahead * step * _CALENDAR_SLACK)))
     try:
@@ -146,10 +131,49 @@ def start(
             datetime.fromtimestamp(first_ts, tz=timezone.utc),
             datetime.fromtimestamp(last_ts, tz=timezone.utc),
         )
+        # Calendar slack normally covers weekends. Extend the history if a holiday
+        # or a sparse instrument still left fewer candles than were requested.
+        for _ in range(4):
+            before = bisect_right([b.time for b in bars], time) - 1
+            if before >= lookback or first_ts == 0:
+                break
+            first_ts = max(0, first_ts - int(max(lookback - before, 100) * step * _CALENDAR_SLACK))
+            bars = state.cache.ensure_range(
+                state.broker.adapter,
+                symbol,
+                timeframe,
+                datetime.fromtimestamp(first_ts, tz=timezone.utc),
+                datetime.fromtimestamp(last_ts, tz=timezone.utc),
+            )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     if not bars:
         raise HTTPException(status_code=409, detail=f"No {symbol} bars to replay around that time.")
+    return bars
+
+
+@router.post("/start", response_model=ReplayUpdate)
+def start(
+    symbol: str,
+    timeframe: Timeframe = Timeframe.H1,
+    time: int = Query(description="Epoch second of the bar to start on (chart time)."),
+    lookback: int = Query(
+        default=1500, ge=0, le=20_000, description="Bars of history to keep before the start."
+    ),
+    lookahead: int | None = Query(
+        default=None, ge=1, le=200_000, description="Most bars to load after the start."
+    ),
+) -> ReplayUpdate:
+    """Start a replay on the bar nearest ``time``.
+
+    The window is the history before that bar plus everything after it (up to the
+    latest bar, capped at ``lookahead``), so the caller only has to say *where* to
+    start. The reply carries the bars up to the cursor, ready to draw.
+    """
+    state = get_state()
+    spec = _spec(symbol)
+    lookahead = lookahead if lookahead is not None else (6000 if TIMEFRAME_SECONDS[timeframe] < 60 else 60_000)
+    bars = _window(symbol, timeframe, time, lookback, lookahead)
 
     # The window above was sized in calendar time, with room to spare for weekends;
     # trim it to exactly the bars asked for around the start.
@@ -163,6 +187,66 @@ def start(
     engine = ReplayEngine.from_bars(symbol, timeframe, bars, paper=state.profiles.active(), **spec)
     engine.begin(engine.nearest_index(time))
     state.replay = engine
+    return _update(engine, engine.visible_bars(), [], reset=True)
+
+
+@router.post("/timeframe", response_model=ReplayUpdate)
+def change_timeframe(
+    timeframe: Timeframe,
+    lookback: int = Query(default=1500, ge=0, le=20_000),
+    lookahead: int | None = Query(default=None, ge=1, le=200_000),
+) -> ReplayUpdate:
+    """Change a replay's candles without ending its paper-trading session."""
+    engine = _engine()
+    if timeframe == engine.timeframe:
+        return _update(engine, engine.visible_bars(), [], reset=True)
+    lookahead = lookahead if lookahead is not None else (6000 if TIMEFRAME_SECONDS[timeframe] < 60 else 60_000)
+    time = engine.cursor_time
+    bars = _window(engine.symbol, timeframe, time, lookback, lookahead)
+    at = bisect_right([b.time for b in bars], time) - 1
+    if at < 0:
+        raise HTTPException(status_code=409, detail="No candles at or before the replay cursor.")
+    first = max(0, at - lookback)
+    # Load the detail of the candle containing the clock. Native intervals use
+    # minute history, with seconds only for the minute containing a subminute
+    # cursor, so switching a seconds replay to a month never downloads a month of ticks.
+    if timeframe == Timeframe.S1:
+        minutes = [bars[at]]
+    else:
+        end = bars[at + 1].time - 1 if at + 1 < len(bars) else time
+        state = get_state()
+        try:
+            minutes = state.cache.ensure_range(
+                state.broker.adapter,
+                engine.symbol,
+                Timeframe.S1 if TIMEFRAME_SECONDS[timeframe] < 60 else Timeframe.M1,
+                datetime.fromtimestamp(bars[at].time, tz=timezone.utc),
+                datetime.fromtimestamp(end, tz=timezone.utc),
+            )
+            if time % 60 and TIMEFRAME_SECONDS[timeframe] >= 60:
+                minute = time // 60 * 60
+                seconds = state.cache.ensure_range(
+                    state.broker.adapter,
+                    engine.symbol,
+                    Timeframe.S1,
+                    datetime.fromtimestamp(minute, tz=timezone.utc),
+                    datetime.fromtimestamp(min(end, minute + 59), tz=timezone.utc),
+                )
+                if not seconds:
+                    raise HTTPException(status_code=409, detail="No ticks around the replay cursor.")
+                minutes = sorted(
+                    [b for b in minutes if not minute <= b.time < minute + 60] + seconds,
+                    key=lambda b: b.time,
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        if not minutes:
+            raise HTTPException(status_code=409, detail="No candles around the replay cursor.")
+    # Do not begin/end a session or play the newly loaded history through SL/TP.
+    # Loading must succeed before touching the current replay, so a failure keeps it usable.
+    engine.change_timeframe(timeframe, bars[first : at + lookahead + 1], at - first, minutes)
     return _update(engine, engine.visible_bars(), [], reset=True)
 
 
@@ -186,10 +270,14 @@ def advance(delta: int = Query(default=1, ge=-1_000_000, le=1_000_000)) -> Repla
     """
     engine = _engine()
     before = engine.index
+    partial = engine.partial_candle
     moved = engine.advance(delta)
     if engine.index < before:
         # Rewinding starts the paper account again, so hand over the whole picture.
         return _update(engine, engine.visible_bars(), [], reset=True)
+    if partial and engine.index > before:
+        # Replace the previously partial candle with its now-complete OHLC.
+        return _update(engine, engine.visible_bars(), moved.closed, reset=True)
     return _update(engine, moved.bars, moved.closed)
 
 
@@ -235,7 +323,7 @@ def reset() -> ReplayState:
 def _current_bar(engine: ReplayEngine) -> Bar:
     if not engine.bars:
         raise HTTPException(status_code=409, detail="Replay has no bars")
-    return engine.bars[min(engine.index, engine.total - 1)]
+    return engine.current_bar
 
 
 @router.post("/orders", response_model=OrderResult)

@@ -191,3 +191,97 @@ def test_state_reports_the_loaded_window_not_just_the_cursor() -> None:
     assert loaded["total"] > 20
     assert len(visible) == 1  # at the start only the first bar is revealed...
     assert loaded["last_time"] > loaded["first_time"]  # ...but the state knows the extent
+
+
+@pytest.mark.parametrize("timeframe", ["S1", "S5", "S10", "S15", "S30", "M1", "M5", "H4", "D1"])
+def test_timeframe_change_preserves_clock_positions_account_and_history(timeframe: str) -> None:
+    with TestClient(app) as client:
+        started, when = _begin(client)
+        order = {"symbol": "EURUSD", "side": "BUY", "volume": 0.1}
+        first = client.post("/api/replay/orders", json=order).json()
+        client.delete(f"/api/replay/positions/{first['order_id']}")
+        client.post("/api/replay/orders", json=order)
+        account = client.get("/api/replay/account").json()
+        report = client.get("/api/replay/report").json()
+        engine = get_state().replay
+        response = client.post(
+            "/api/replay/timeframe", params={"timeframe": timeframe, "lookback": 12, "lookahead": 8}
+        )
+        assert response.status_code == 200, response.text
+        changed = response.json()
+        assert get_state().replay is engine
+        assert changed["state"]["timeframe"] == timeframe
+        assert changed["state"]["cursor_time"] == when
+        assert changed["state"]["index"] == 12
+        assert len(changed["bars"]) == 13
+        assert len(changed["bars"]) < changed["state"]["total"] <= 21
+        assert changed["bars"][-1]["time"] <= when
+        assert changed["bars"][-1]["close"] == started["bars"][-1]["close"]
+        assert changed["reset"] and changed["closed"] == []
+        assert changed["account"] == account
+        assert client.get("/api/replay/report").json() == report
+
+
+def test_round_trip_between_intervals_does_not_drift_or_rewind_the_clock() -> None:
+    with TestClient(app) as client:
+        _, when = _begin(client)
+        for timeframe in ["M5", "D1", "S5", "H1"]:
+            reply = client.post(
+                "/api/replay/timeframe", params={"timeframe": timeframe, "lookback": 20, "lookahead": 10}
+            )
+            assert reply.status_code == 200, reply.text
+            assert reply.json()["state"]["cursor_time"] == when
+        advanced = client.post("/api/replay/advance").json()
+        assert advanced["state"]["cursor_time"] > when
+        assert advanced["reset"]  # the previously partial candle is now complete
+        assert advanced["bars"][-1]["time"] == advanced["state"]["cursor_time"]
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_a_failed_interval_load_leaves_the_replay_usable(monkeypatch, empty: bool) -> None:
+    with TestClient(app) as client:
+        started, _ = _begin(client)
+        engine = get_state().replay
+
+        def fail(*args, **kwargs):
+            if empty:
+                return []
+            raise RuntimeError("History unavailable")
+
+        monkeypatch.setattr(get_state().cache, "ensure_range", fail)
+        response = client.post("/api/replay/timeframe", params={"timeframe": "M5"})
+        assert response.status_code == (409 if empty else 502)
+        assert get_state().replay is engine
+        assert client.get("/api/replay/state").json() == started["state"]
+        assert client.get("/api/replay/bars").json() == started["bars"]
+        assert client.post("/api/replay/advance").status_code == 200
+
+
+def test_timeframe_change_without_a_replay_is_rejected() -> None:
+    with TestClient(app) as client:
+        assert client.post("/api/replay/timeframe", params={"timeframe": "S1"}).status_code == 409
+
+
+@pytest.mark.parametrize("timeframe", ["W1", "MN1"])
+def test_large_intervals_only_need_seconds_for_the_minute_containing_the_cursor(monkeypatch, timeframe) -> None:
+    with TestClient(app) as client:
+        _begin(client)
+        state = get_state()
+        engine = state.replay
+        cursor = engine.current_bar.model_copy(update={"time": engine.cursor_time // 60 * 60 + 17})
+        engine.bars[engine.index] = cursor
+        ensure = state.cache.ensure_range
+        second_spans = []
+
+        def record(broker, symbol, tf, start, end):
+            if tf.value == "S1":
+                second_spans.append((end - start).total_seconds())
+            return ensure(broker, symbol, tf, start, end)
+
+        monkeypatch.setattr(state.cache, "ensure_range", record)
+        reply = client.post(
+            "/api/replay/timeframe", params={"timeframe": timeframe, "lookback": 2, "lookahead": 2}
+        )
+        assert reply.status_code == 200, reply.text
+        assert reply.json()["state"]["cursor_time"] == cursor.time
+        assert second_spans and max(second_spans) <= 59

@@ -10,12 +10,10 @@ import {
   HistogramSeries,
   LineSeries,
   createChart,
-  createSeriesMarkers,
   type CandlestickData,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
-  type ISeriesMarkersPluginApi,
   type LineData,
   type Logical,
   type Time,
@@ -130,19 +128,9 @@ export interface HoverInfo {
 }
 export type HoverHandler = (hover: HoverInfo | null) => void;
 
-/** A mark on a candle, such as where a replay trade opened or closed. */
-export interface ChartMarker {
-  time: number;
-  position: "aboveBar" | "belowBar";
-  shape: "arrowUp" | "arrowDown" | "circle" | "square";
-  color: string;
-  text?: string;
-}
-
 export type ChartHandle = {
   chart: IChartApi;
   series: ISeriesApi<"Candlestick">;
-  markers: ISeriesMarkersPluginApi<Time>;
   geometry: ChartGeometry;
   /**
    * Replace the series; `view` says what happens to the part on screen. `live` is
@@ -169,8 +157,6 @@ export type ChartHandle = {
   onLegend: (handler: LegendHandler) => () => void;
   /** Fired as the pointer moves over the candles, and with null when it leaves them. */
   onHover: (handler: HoverHandler) => () => void;
-  /** Marks on candles, e.g. where a replay trade opened and closed. */
-  setMarkers: (markers: ChartMarker[]) => void;
   destroy: () => void;
 };
 
@@ -282,7 +268,6 @@ export function createChartHandle(container: HTMLElement): ChartHandle {
     lastValueVisible: false,
   });
 
-  const markers = createSeriesMarkers(series, []);
 
   // -- time <-> bar index --------------------------------------------------
   // The chart is indexed by bar, not by time (weekends and holidays have no bars). A time inside the
@@ -698,22 +683,6 @@ export function createChartHandle(container: HTMLElement): ChartHandle {
     for (const h of hoverHandlers) h(hover);
   });
 
-  // -- markers -------------------------------------------------------------
-  function setMarkers(list: ChartMarker[]) {
-    // The plugin wants them in time order.
-    const sorted = [...list].sort((a, b) => a.time - b.time);
-    markers.setMarkers(
-      sorted.map((m) => ({
-        time: m.time as UTCTimestamp,
-        position: m.position,
-        shape: m.shape,
-        color: m.color,
-        text: m.text ?? "",
-        size: 1,
-      })),
-    );
-  }
-
   // -- dragging ----------------------------------------------------------
   const dragHandlers = new Set<DragHandler>();
   const dragEndHandlers = new Set<DragEndHandler>();
@@ -906,7 +875,6 @@ export function createChartHandle(container: HTMLElement): ChartHandle {
   return {
     chart,
     series,
-    markers,
     geometry,
     setBars(stored: Bar[], view: ViewPolicy = "latest", live: Bar | null = null) {
       // The candle being drawn right now goes in with the series, not after it: the
@@ -994,6 +962,7 @@ export function createChartHandle(container: HTMLElement): ChartHandle {
     },
     setBarSeconds(seconds) {
       barSeconds = seconds;
+      chart.applyOptions({ timeScale: { secondsVisible: seconds < 60 } });
     },
     fitContent: fit,
     onClick(handler: ClickHandler) {
@@ -1016,7 +985,6 @@ export function createChartHandle(container: HTMLElement): ChartHandle {
       hoverHandlers.add(handler);
       return () => hoverHandlers.delete(handler);
     },
-    setMarkers,
     destroy() {
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);

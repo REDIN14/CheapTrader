@@ -3,7 +3,6 @@ import {
   createChartHandle,
   type ChartGeometry,
   type ChartHandle,
-  type ChartMarker,
   type HoverInfo,
   type IndicatorPlot,
   type LegendValues,
@@ -17,8 +16,6 @@ interface Props {
   bars: Bar[];
   liveBar: Bar | null;
   priceLines: PriceLineSpec[];
-  /** Marks on candles (a replay trade's entry and exit). */
-  markers?: ChartMarker[];
   indicatorPlots: IndicatorPlot[];
   digits?: number;
   point?: number;
@@ -61,7 +58,6 @@ export function Chart({
   bars,
   liveBar,
   priceLines,
-  markers,
   indicatorPlots,
   digits,
   point,
@@ -172,10 +168,6 @@ export function Chart({
   useEffect(() => {
     handleRef.current?.setIndicators(indicatorPlots);
   }, [indicatorPlots]);
-
-  useEffect(() => {
-    handleRef.current?.setMarkers(markers ?? []);
-  }, [markers]);
 
   useEffect(() => {
     if (fitSignal !== undefined) handleRef.current?.fitContent();

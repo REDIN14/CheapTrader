@@ -68,10 +68,10 @@ export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starti
     day >= isoDay(oldestTime);
   const startOnDate = () => {
     if (!dateValid) return;
-    const [h, m] = (intraday ? clock : "00:00").split(":").map(Number);
+    const [h, m, s] = (intraday ? clock : "00:00").split(":").map(Number);
     const [y, mo, d] = day.split("-").map(Number);
     setDateOpen(false);
-    onStartAt(Date.UTC(y, mo - 1, d, h || 0, m || 0) / 1000);
+    onStartAt(Date.UTC(y, mo - 1, d, h || 0, m || 0, s || 0) / 1000);
   };
 
   /** Whether a start this far back still lies inside the loaded history. */
@@ -144,7 +144,7 @@ export function ReplayPicker({ symbol, timeframe, newestTime, oldestTime, starti
               {intraday && (
                 <label>
                   Time
-                  <input type="time" value={clock} onChange={(e) => setClock(e.target.value)} />
+                  <input type="time" step={TF[timeframe].seconds < 60 ? 1 : 60} value={clock} onChange={(e) => setClock(e.target.value)} />
                 </label>
               )}
               {oldestTime != null && newestTime != null && (

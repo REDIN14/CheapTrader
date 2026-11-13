@@ -102,6 +102,7 @@ export function useChartData({
   // The frame on screen as of the last commit; the loader reads it to decide what
   // the next frame should do to the view.
   const shown = useRef(frame);
+  const generation = useRef(0);
   const latest = useRef({ symbol, timeframe, barCount, readView, onError, onSettled });
   latest.current = { symbol, timeframe, barCount, readView, onError, onSettled };
 
@@ -119,11 +120,13 @@ export function useChartData({
     const sym = symbol;
     const tf = timeframe;
     const want = barCount;
+    const token = ++generation.current;
     let cancelled = false;
     const idle: Array<() => void> = [];
 
     /** Show a series; a refresh of the one on screen leaves the view alone. */
     const show = (bars: Bar[], complete: boolean, view?: ViewPolicy) => {
+      if (cancelled || token !== generation.current) return;
       const now = shown.current;
       const sameSeries = now.source === "live" && now.symbol === sym && now.bars.length > 0;
       const policy: ViewPolicy =
@@ -247,11 +250,14 @@ export function useChartData({
    * bars at a readable zoom ("latest"); a rewind keeps the view ("keep").
    */
   const showReplayBars = useCallback(
-    (bars: Bar[], view: ViewPolicy = "latest") => {
+    (bars: Bar[], view: ViewPolicy = "latest", context?: { symbol: string; timeframe: Timeframe }) => {
+      // Replay takes ownership immediately, including before React cleans up a
+      // live request that was still loading when the start reply arrived.
+      generation.current++;
       const now = shown.current;
       put({
-        symbol: latest.current.symbol,
-        timeframe: latest.current.timeframe,
+        symbol: context?.symbol ?? latest.current.symbol,
+        timeframe: context?.timeframe ?? latest.current.timeframe,
         bars,
         view,
         complete: true,

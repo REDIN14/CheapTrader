@@ -48,6 +48,7 @@ import {
 } from "../lib/drawings";
 import { useAnimationFrame } from "../lib/hooks";
 import { usePersistentState } from "../lib/persist";
+import { snapToCandle } from "../lib/magnet";
 import type { Bar, Position } from "../lib/types";
 import { useDrawings } from "../lib/useDrawings";
 import { ChartContextMenu, type ContextMenuItem } from "./ChartContextMenu";
@@ -129,6 +130,7 @@ export function DrawingController({
 }: Props) {
   const store = useDrawings(symbol, onError);
   const [hidden, setHidden] = usePersistentState("drawingsHidden", false);
+  const [magnet, setMagnet] = usePersistentState("drawingMagnet", false);
   const [tool, setTool] = useState<Tool | null>(null);
   const [placed, setPlaced] = useState<DrawingPoint[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -146,7 +148,8 @@ export function DrawingController({
   const sending = useRef(false);
 
   // The newest of everything, for the handlers that outlive a render.
-  const now = useRef({ geometry, tool, placed, selectedId, bars, barSeconds, store, paused, trading, mapper: null as Mapper | null });
+  const now = useRef({ geometry, tool, placed, selectedId, bars, barSeconds, store, paused, trading, magnet, mapper: null as Mapper | null });
+  now.current.magnet = magnet;
   now.current.paused = paused;
   now.current.geometry = geometry;
   now.current.tool = tool;
@@ -186,7 +189,8 @@ export function DrawingController({
     const time = g.xToTime(at.x);
     const price = g.localYToPrice(at.y);
     if (time == null || price == null) return;
-    const points = [...s.placed, { time, price }];
+    const point = s.magnet ? snapToCandle({ ...at, time, price }, s.bars, g) : null;
+    const points = [...s.placed, point ?? { time, price }];
     if (points.length < TOOL_POINTS[s.tool]) {
       setPlaced(points);
       return;
@@ -256,7 +260,7 @@ export function DrawingController({
   useAnimationFrame(() => {
     const g = now.current.geometry;
     if (!g) return;
-    const sig = `${g.signature()}|${now.current.tool && now.current.placed.length ? pointerSeq.current : 0}`;
+    const sig = `${g.signature()}|${now.current.tool && (now.current.placed.length || now.current.magnet) ? pointerSeq.current : 0}`;
     if (sig === lastSig.current) return;
     lastSig.current = sig;
     redraw((n) => n + 1);
@@ -304,8 +308,13 @@ export function DrawingController({
   const move = (e: ReactPointerEvent) => {
     const hold = grab.current;
     if (!hold || hold.pointer !== e.pointerId) return;
-    const at = toPointer(e.clientX, e.clientY);
+    let at = toPointer(e.clientX, e.clientY);
     if (!at) return;
+    const s = now.current;
+    if (s.magnet && hold.handle !== "move" && s.geometry && at.x != null && at.y != null) {
+      const snapped = snapToCandle({ ...at, x: at.x, y: at.y }, s.bars, s.geometry);
+      if (snapped) at = { ...at, ...snapped };
+    }
     hold.moved = true;
     now.current.store.preview(
       tidy(drag(hold.start, hold.handle, hold.from, at, now.current.mapper ?? undefined, now.current.barSeconds)),
@@ -431,10 +440,16 @@ export function DrawingController({
     : [];
 
   let ghost: Layout | null = null;
+  let snappedPoint: DrawingPoint | null = null;
+  if (g && magnet && tool && pointer.current) {
+    const time = g.xToTime(pointer.current.x);
+    const price = g.localYToPrice(pointer.current.y);
+    if (time != null && price != null) snappedPoint = snapToCandle({ ...pointer.current, time, price }, bars, g);
+  }
   if (mapper && tool && placed.length && pointer.current) {
     const time = mapper.time(pointer.current.x);
     const price = mapper.price(pointer.current.y);
-    const sketch = time != null && price != null ? draft(tool, placed, { time, price }, ctx) : null;
+    const sketch = time != null && price != null ? draft(tool, placed, snappedPoint ?? { time, price }, ctx) : null;
     if (sketch) ghost = layout(sketch, mapper, digits);
   }
 
@@ -487,6 +502,11 @@ export function DrawingController({
             </g>
           )}
 
+          {snappedPoint && g && (
+            <circle cx={g.timeToX(snappedPoint.time) ?? undefined} cy={g.priceToY(snappedPoint.price) ?? undefined}
+              r={5} fill="none" stroke="#2962ff" strokeWidth={2} pointerEvents="none" />
+          )}
+
           {selected &&
             !selected.drawing.locked &&
             selected.lay.handles.map((h) => (
@@ -529,6 +549,8 @@ export function DrawingController({
         tool={tool}
         onTool={pickTool}
         toolsDisabled={paused}
+        magnet={magnet}
+        onToggleMagnet={() => setMagnet((v) => !v)}
         hidden={hidden}
         onToggleHidden={() => {
           setHidden((v) => !v);
